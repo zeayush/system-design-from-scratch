@@ -1,0 +1,18 @@
+[submodule "book1-chapter04/rate-limiter-go"]
+	path = book1-chapter04/rate-limiter-go
+	url = https://github.com/zeayush/rate-limiter-go
+[submodule "book1-chapter05/consistent-hashing-go"]
+	path = book1-chapter05/consistent-hashing-go
+	url = https://github.com/zeayush/consistent-hashing-go
+[submodule "book1-chapter05/consistent-hash-rs"]
+	path = book1-chapter05/consistent-hash-rs
+	url = https://github.com/zeayush/consistent-hash-rs
+[submodule "book1-chapter07/uid-generator-go"]
+	path = book1-chapter07/uid-generator-go
+	url = https://github.com/zeayush/uid-generator-go
+[submodule "book1-chapter07/uid-generator-rs"]
+	path = book1-chapter07/uid-generator-rs
+	url = https://github.com/zeayush/uid-generator-rs
+[submodule "book1-chapter08/url-shortener-go"]
+	path = book1-chapter08/url-shortener-go
+	url = https://github.com/zeayush/url-shortener-go
