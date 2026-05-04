@@ -1,18 +1,18 @@
-[submodule "book1-chapter04/rate-limiter-go"]
-	path = book1-chapter04/rate-limiter-go
+[submodule "1.4-Rate-Limiter/rate-limiter-go"]
+	path = 1.4-Rate-Limiter/rate-limiter-go
 	url = https://github.com/zeayush/rate-limiter-go
-[submodule "book1-chapter05/consistent-hashing-go"]
-	path = book1-chapter05/consistent-hashing-go
+[submodule "1.5-Consistent-Hashing/consistent-hashing-go"]
+	path = 1.5-Consistent-Hashing/consistent-hashing-go
 	url = https://github.com/zeayush/consistent-hashing-go
-[submodule "book1-chapter05/consistent-hash-rs"]
-	path = book1-chapter05/consistent-hash-rs
+[submodule "1.5-Consistent-Hashing/consistent-hash-rs"]
+	path = 1.5-Consistent-Hashing/consistent-hash-rs
 	url = https://github.com/zeayush/consistent-hash-rs
-[submodule "book1-chapter07/uid-generator-go"]
-	path = book1-chapter07/uid-generator-go
+[submodule "1.7-Unique-ID-Generator/uid-generator-go"]
+	path = 1.7-Unique-ID-Generator/uid-generator-go
 	url = https://github.com/zeayush/uid-generator-go
-[submodule "book1-chapter07/uid-generator-rs"]
-	path = book1-chapter07/uid-generator-rs
+[submodule "1.7-Unique-ID-Generator/uid-generator-rs"]
+	path = 1.7-Unique-ID-Generator/uid-generator-rs
 	url = https://github.com/zeayush/uid-generator-rs
-[submodule "book1-chapter08/url-shortener-go"]
-	path = book1-chapter08/url-shortener-go
+[submodule "1.8-URL-Shortener/url-shortener-go"]
+	path = 1.8-URL-Shortener/url-shortener-go
 	url = https://github.com/zeayush/url-shortener-go

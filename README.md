@@ -10,17 +10,10 @@ This is a living portfolio. Each chapter lives in its own directory here as a **
 
 ```
 system-design-from-scratch/
-├── book1-chapter04/   → rate-limiter-go
-├── book1-chapter05/   → consistent-hashing-go · consistent-hash-rs
-├── book1-chapter06/   → (coming: key-value store)
-├── book1-chapter07/   → uid-generator-go · uid-generator-rs
-├── book1-chapter08/   → url-shortener-go
-├── book1-chapter09/   → (coming: web crawler)
-│   ...
-├── book2-chapter01/   → (coming: proximity service)
-├── book2-chapter02/   → (coming: nearby friends)
-│   ...
-└── book2-chapter13/   → (coming: stock exchange)
+├── 1.4-Rate-Limiter/          → rate-limiter-go
+├── 1.5-Consistent-Hashing/    → consistent-hashing-go · consistent-hash-rs
+├── 1.7-Unique-ID-Generator/   → uid-generator-go · uid-generator-rs
+└── 1.8-URL-Shortener/         → url-shortener-go
 ```
 
 Clone with all submodules:
@@ -41,18 +34,18 @@ git submodule update --init --recursive
 
 | Directory | Chapter | Implementation | Stack | Status |
 |-----------|---------|----------------|-------|--------|
-| `book1-chapter04` | Ch. 4 — Rate Limiter | [rate-limiter-go](https://github.com/zeayush/rate-limiter-go) | Go | ✅ |
-| `book1-chapter05` | Ch. 5 — Consistent Hashing | [consistent-hashing-go](https://github.com/zeayush/consistent-hashing-go) · [consistent-hash-rs](https://github.com/zeayush/consistent-hash-rs) | Go · Rust | ✅ |
-| `book1-chapter06` | Ch. 6 — Key-Value Store | — | — | 🔜 |
-| `book1-chapter07` | Ch. 7 — Unique ID Generator | [uid-generator-go](https://github.com/zeayush/uid-generator-go) · [uid-generator-rs](https://github.com/zeayush/uid-generator-rs) | Go · Rust | ✅ |
-| `book1-chapter08` | Ch. 8 — URL Shortener | [url-shortener-go](https://github.com/zeayush/url-shortener-go) | Go | ✅ |
-| `book1-chapter09` | Ch. 9 — Web Crawler | — | — | 🔜 |
-| `book1-chapter10` | Ch. 10 — Notification System | — | — | 🔜 |
-| `book1-chapter11` | Ch. 11 — News Feed System | — | — | 🔜 |
-| `book1-chapter12` | Ch. 12 — Chat System | — | — | 🔜 |
-| `book1-chapter13` | Ch. 13 — Search Autocomplete | — | — | 🔜 |
-| `book1-chapter14` | Ch. 14 — YouTube | — | — | 🔜 |
-| `book1-chapter15` | Ch. 15 — Google Drive | — | — | 🔜 |
+| [`1.4-Rate-Limiter`](1.4-Rate-Limiter/) | Ch. 4 — Rate Limiter | [rate-limiter-go](https://github.com/zeayush/rate-limiter-go) | Go | ✅ |
+| [`1.5-Consistent-Hashing`](1.5-Consistent-Hashing/) | Ch. 5 — Consistent Hashing | [consistent-hashing-go](https://github.com/zeayush/consistent-hashing-go) · [consistent-hash-rs](https://github.com/zeayush/consistent-hash-rs) | Go · Rust | ✅ |
+| `1.6-Key-Value-Store` | Ch. 6 — Key-Value Store | — | — | 🔜 |
+| [`1.7-Unique-ID-Generator`](1.7-Unique-ID-Generator/) | Ch. 7 — Unique ID Generator | [uid-generator-go](https://github.com/zeayush/uid-generator-go) · [uid-generator-rs](https://github.com/zeayush/uid-generator-rs) | Go · Rust | ✅ |
+| [`1.8-URL-Shortener`](1.8-URL-Shortener/) | Ch. 8 — URL Shortener | [url-shortener-go](https://github.com/zeayush/url-shortener-go) | Go | ✅ |
+| `1.9-Web-Crawler` | Ch. 9 — Web Crawler | — | — | 🔜 |
+| `1.10-Notification-System` | Ch. 10 — Notification System | — | — | 🔜 |
+| `1.11-News-Feed` | Ch. 11 — News Feed System | — | — | 🔜 |
+| `1.12-Chat-System` | Ch. 12 — Chat System | — | — | 🔜 |
+| `1.13-Search-Autocomplete` | Ch. 13 — Search Autocomplete | — | — | 🔜 |
+| `1.14-YouTube` | Ch. 14 — YouTube | — | — | 🔜 |
+| `1.15-Google-Drive` | Ch. 15 — Google Drive | — | — | 🔜 |
 
 > Ch. 1–3 skipped (conceptual framework / estimation chapters, no implementation target).
 
@@ -62,19 +55,19 @@ git submodule update --init --recursive
 
 | Directory | Chapter | Implementation | Stack | Status |
 |-----------|---------|----------------|-------|--------|
-| `book2-chapter01` | Ch. 1 — Proximity Service | — | — | 🔜 |
-| `book2-chapter02` | Ch. 2 — Nearby Friends | — | — | 🔜 |
-| `book2-chapter03` | Ch. 3 — Google Maps | — | — | 🔜 |
-| `book2-chapter04` | Ch. 4 — Distributed Message Queue | — | — | 🔜 |
-| `book2-chapter05` | Ch. 5 — Metrics Monitoring & Alerting | — | — | 🔜 |
-| `book2-chapter06` | Ch. 6 — Ad Click Event Aggregation | — | — | 🔜 |
-| `book2-chapter07` | Ch. 7 — Hotel Reservation System | — | — | 🔜 |
-| `book2-chapter08` | Ch. 8 — Distributed Email Service | — | — | 🔜 |
-| `book2-chapter09` | Ch. 9 — S3-like Object Storage | — | — | 🔜 |
-| `book2-chapter10` | Ch. 10 — Real-time Gaming Leaderboard | — | — | 🔜 |
-| `book2-chapter11` | Ch. 11 — Payment System | — | — | 🔜 |
-| `book2-chapter12` | Ch. 12 — Digital Wallet | — | — | 🔜 |
-| `book2-chapter13` | Ch. 13 — Stock Exchange | — | — | 🔜 |
+| `2.1-Proximity-Service` | Ch. 1 — Proximity Service | — | — | 🔜 |
+| `2.2-Nearby-Friends` | Ch. 2 — Nearby Friends | — | — | 🔜 |
+| `2.3-Google-Maps` | Ch. 3 — Google Maps | — | — | 🔜 |
+| `2.4-Message-Queue` | Ch. 4 — Distributed Message Queue | — | — | 🔜 |
+| `2.5-Metrics-Monitoring` | Ch. 5 — Metrics Monitoring & Alerting | — | — | 🔜 |
+| `2.6-Ad-Click-Aggregation` | Ch. 6 — Ad Click Event Aggregation | — | — | 🔜 |
+| `2.7-Hotel-Reservation` | Ch. 7 — Hotel Reservation System | — | — | 🔜 |
+| `2.8-Email-Service` | Ch. 8 — Distributed Email Service | — | — | 🔜 |
+| `2.9-S3-Object-Storage` | Ch. 9 — S3-like Object Storage | — | — | 🔜 |
+| `2.10-Leaderboard` | Ch. 10 — Real-time Gaming Leaderboard | — | — | 🔜 |
+| `2.11-Payment-System` | Ch. 11 — Payment System | — | — | 🔜 |
+| `2.12-Digital-Wallet` | Ch. 12 — Digital Wallet | — | — | 🔜 |
+| `2.13-Stock-Exchange` | Ch. 13 — Stock Exchange | — | — | 🔜 |
 
 > CDN delivery skipped.
 
@@ -129,21 +122,21 @@ Each submodule repo is self-contained:
 
 ```bash
 # Consistent hashing in Go
-cd book1-chapter05/consistent-hashing-go
+cd 1.5-Consistent-Hashing/consistent-hashing-go
 go test ./...
 go test -bench=. ./...
 ```
 
 ```bash
 # UID generator in Rust
-cd book1-chapter07/uid-generator-rs
+cd 1.7-Unique-ID-Generator/uid-generator-rs
 cargo test
 cargo bench
 ```
 
 ```bash
 # URL shortener (Docker)
-cd book1-chapter08/url-shortener-go
+cd 1.8-URL-Shortener/url-shortener-go
 docker compose up --build
 ```
 
