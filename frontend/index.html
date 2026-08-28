@@ -1,0 +1,606 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Four chapters of Alex Xu's System Design Interview, built from scratch in Go and Rust - and playable. A rate limiter you can overload, a hash ring you can break, an ID generator you can spam, a URL shortener you can squeeze.">
+<meta name="color-scheme" content="dark">
+<meta property="og:title" content="System Design Machine Room">
+<meta property="og:description" content="Four system design chapters, built from scratch - and playable in the browser.">
+<meta property="og:type" content="website">
+<title>System Design Machine Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&family=Karla:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@400;700&display=swap">
+
+<style>
+:root{
+  --void:#000000;
+  --chalk:#FFFFFF;
+  --c-90:rgba(255,255,255,.90);
+  --c-72:rgba(255,255,255,.72);
+  --c-52:rgba(255,255,255,.52);
+  --c-34:rgba(255,255,255,.34);
+  --c-18:rgba(255,255,255,.18);
+  --c-09:rgba(255,255,255,.09);
+  --c-05:rgba(255,255,255,.05);
+  --alarm:#FF6B5A;
+  --alarm-dim:rgba(255,107,90,.30);
+  --ink:var(--chalk);
+  --hand:255px 12px 225px 15px/15px 225px 15px 255px;
+  --hand2:15px 225px 15px 255px/255px 15px 225px 15px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--void);color:var(--c-72);
+  font-family:"Karla",system-ui,sans-serif;font-size:17px;line-height:1.65;
+  -webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+h1,h2,h3{font-family:"Caveat","Segoe Script",cursive;font-weight:700;color:var(--chalk);
+  margin:0;line-height:1;letter-spacing:.005em;text-wrap:balance}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+::selection{background:var(--chalk);color:#000}
+
+/* faint sketch grid, like squared paper drawn in pencil */
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(var(--c-05) 1px,transparent 1px),linear-gradient(90deg,var(--c-05) 1px,transparent 1px);
+  background-size:38px 38px;
+  -webkit-mask-image:radial-gradient(ellipse 120% 80% at 50% 0%,#000 10%,transparent 75%);
+  mask-image:radial-gradient(ellipse 120% 80% at 50% 0%,#000 10%,transparent 75%);
+}
+.wrap{max-width:1140px;margin:0 auto;padding:0 26px;position:relative;z-index:1}
+
+.hatch{background-image:repeating-linear-gradient(45deg,var(--c-18) 0 1px,transparent 1px 7px)}
+
+/* ---------- rail ---------- */
+.rail{position:fixed;left:16px;top:0;height:100vh;display:flex;flex-direction:column;justify-content:center;gap:4px;z-index:40}
+.rail a{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;color:var(--c-34);
+  text-decoration:none;padding:6px 8px;border:1.5px solid transparent;border-radius:var(--hand);transition:.2s}
+.rail a:hover,.rail a:focus-visible{color:var(--chalk);border-color:var(--c-34)}
+.rail a.on{color:#000;background:var(--chalk);border-color:var(--chalk)}
+@media (max-width:1120px){.rail{display:none}}
+
+/* ---------- hero ---------- */
+.hero{padding:120px 0 70px}
+.kicker{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--c-34)}
+.hero h1{font-size:clamp(64px,15vw,190px);margin:6px 0 0;line-height:.82;color:var(--chalk)}
+.hero h1 .u{position:relative;display:inline-block}
+.hero h1 .u svg{position:absolute;left:-2%;bottom:-.16em;width:104%;height:.3em;overflow:visible}
+.lede{font-size:clamp(17px,2vw,21px);max-width:56ch;margin:30px 0 0;color:var(--c-72)}
+.lede em{color:var(--chalk);font-style:italic}
+.meta{display:flex;flex-wrap:wrap;gap:9px;margin-top:30px}
+.tag{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;color:var(--c-52);
+  border:1.5px solid var(--c-18);border-radius:var(--hand);padding:6px 14px}
+.cue{margin-top:56px;font-family:"JetBrains Mono",monospace;font-size:11.5px;letter-spacing:.14em;color:var(--c-34)}
+
+/* ---------- panels ---------- */
+.panel{padding:60px 0}
+.slate{border:2px solid var(--c-52);border-radius:var(--hand);padding:0;position:relative;background:#000}
+.slate::before{content:"";position:absolute;inset:-5px 4px 3px -4px;border:1.5px solid var(--c-18);
+  border-radius:var(--hand2);pointer-events:none}
+.head{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:22px 28px 16px;
+  border-bottom:1.5px dashed var(--c-18)}
+.chapno{font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:700;letter-spacing:.1em;
+  color:#000;background:var(--chalk);padding:4px 9px;border-radius:9px 3px 11px 4px/4px 11px 3px 9px}
+.head h2{font-size:clamp(34px,5vw,58px)}
+.head .stack{margin-left:auto;font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.1em;color:var(--c-34)}
+.body{padding:26px 28px 30px}
+.blurb{max-width:60ch;margin:0 0 26px;color:var(--c-72)}
+.blurb b{color:var(--chalk);font-weight:500;border-bottom:1.5px solid var(--c-34)}
+
+/* ---------- controls ---------- */
+.controls{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;margin-bottom:24px}
+.field{display:flex;flex-direction:column;gap:7px}
+.field label{font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--c-34)}
+input[type=number],input[type=text],select{
+  font-family:"JetBrains Mono",monospace;font-size:14px;color:var(--chalk);background:#000;
+  border:1.5px solid var(--c-34);border-radius:var(--hand);padding:9px 13px;
+}
+select{appearance:none;padding-right:30px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--c-52) 50%),linear-gradient(135deg,var(--c-52) 50%,transparent 50%);
+  background-position:calc(100% - 16px) 17px,calc(100% - 11px) 17px;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+input[type=text]{min-width:min(430px,70vw)}
+input[type=range]{accent-color:var(--chalk);width:180px}
+input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible{outline:2px dashed var(--chalk);outline-offset:3px}
+
+.seg{display:inline-flex;border:1.5px solid var(--c-34);border-radius:var(--hand);overflow:hidden}
+.seg button{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:700;padding:9px 14px;
+  background:transparent;color:var(--c-52);border:0;border-right:1.5px solid var(--c-18);cursor:pointer}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--chalk);color:#000}
+
+.btn{font-family:"Caveat",cursive;font-weight:700;font-size:22px;color:#000;background:var(--chalk);
+  border:2px solid var(--chalk);border-radius:var(--hand);padding:8px 24px 10px;cursor:pointer;
+  transition:transform .07s ease,background .15s}
+.btn:hover{transform:translate(-1px,-1px)}
+.btn:active{transform:translate(1px,2px)}
+.btn.ghost{background:transparent;color:var(--chalk);border-color:var(--c-52)}
+.btn.ghost:hover{border-color:var(--chalk)}
+.btn.big{font-size:34px;padding:14px 44px 18px}
+.btn[disabled]{opacity:.35;cursor:not-allowed;transform:none}
+.btn.cool{background:var(--alarm);border-color:var(--alarm);color:#000}
+
+/* ---------- readouts ---------- */
+.readout{display:flex;flex-wrap:wrap;gap:12px}
+.stat{border:1.5px solid var(--c-18);border-radius:var(--hand);padding:9px 14px;min-width:106px}
+.stat .k{font-family:"JetBrains Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--c-34)}
+.stat .v{font-family:"JetBrains Mono",monospace;font-size:22px;font-weight:700;color:var(--chalk);
+  font-variant-numeric:tabular-nums;line-height:1.3}
+.stat .v.sm{font-size:15px}
+.stat.bad .v{color:var(--alarm)}
+.stage{border:1.5px dashed var(--c-18);border-radius:var(--hand);padding:22px;position:relative}
+
+/* ---------- comic bubble ---------- */
+.bubble{position:absolute;z-index:8;background:#000;color:var(--chalk);border:2.5px solid var(--chalk);
+  border-radius:26px 30px 24px 28px/28px 24px 30px 26px;padding:12px 20px 14px;
+  font-family:"Caveat",cursive;font-weight:700;font-size:26px;line-height:1.12;max-width:290px;pointer-events:none}
+.bubble .tail{position:absolute;left:26px;bottom:-24px;width:40px;height:26px;overflow:visible}
+.bubble.alarm{border-color:var(--alarm);color:var(--alarm)}
+@media (prefers-reduced-motion:no-preference){
+  .bubble{animation:pop .32s cubic-bezier(.2,1.6,.4,1) both}
+  @keyframes pop{from{transform:scale(.3) rotate(-10deg);opacity:0}to{transform:scale(1) rotate(-3deg);opacity:1}}
+}
+@media (prefers-reduced-motion:reduce){.bubble{transform:rotate(-3deg)}}
+
+.log{font-family:"JetBrains Mono",monospace;font-size:12px;line-height:1.8;max-height:200px;overflow-y:auto;
+  border:1.5px solid var(--c-18);border-radius:var(--hand);padding:11px 14px}
+.log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ok{color:var(--chalk)} .no{color:var(--alarm)} .dim{color:var(--c-34)}
+.chips{display:flex;flex-wrap:wrap;gap:5px;min-height:28px}
+.chip{font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;padding:3px 7px;
+  border-radius:7px 3px 8px 4px/4px 8px 3px 7px;border:1.5px solid var(--c-34);color:var(--c-72)}
+.chip.c429{border-color:var(--alarm);color:var(--alarm);background:var(--alarm-dim)}
+@media (prefers-reduced-motion:no-preference){.chip{animation:pop .18s ease-out both}}
+
+table{border-collapse:collapse;width:100%;font-family:"JetBrains Mono",monospace;font-size:12.5px;color:var(--c-72)}
+th,td{text-align:left;padding:9px 12px;border-bottom:1.5px dashed var(--c-18)}
+th{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--c-34)}
+td b{color:var(--chalk);font-weight:700}
+.scrollx{overflow-x:auto}
+.note{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--c-34);letter-spacing:.03em}
+.hint{font-family:"Caveat",cursive;font-size:22px;color:var(--c-52)}
+
+.foot{padding:66px 0 110px;border-top:1.5px dashed var(--c-18);margin-top:70px}
+.roadmap{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.soon{font-family:"JetBrains Mono",monospace;font-size:11px;border:1.5px dashed var(--c-18);
+  color:var(--c-34);border-radius:var(--hand);padding:6px 12px}
+a.link{color:var(--chalk);text-decoration-color:var(--c-34);text-underline-offset:4px}
+a.link:hover{text-decoration-color:var(--chalk)}
+
+@media (max-width:760px){
+  #ch-grid{grid-template-columns:1fr !important}
+  .wrap{padding:0 16px}
+  .body{padding:20px 16px 24px}
+  .head{padding:18px 16px 14px}
+  .hero{padding:76px 0 46px}
+  .btn.big{font-size:27px;padding:12px 26px 15px}
+  input[type=text]{min-width:100%;width:100%}
+  .field{flex:1 1 100%}
+  .controls{gap:14px}
+  .bubble{font-size:21px;max-width:210px}
+}
+@media (prefers-reduced-motion:no-preference){
+  .reveal{opacity:0;transform:translateY(24px)}
+  .reveal.in{opacity:1;transform:none;transition:opacity .6s ease,transform .6s cubic-bezier(.2,.8,.3,1)}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="pencil" x="-8%" y="-8%" width="116%" height="116%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.032" numOctaves="3" seed="7" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="2.6" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+  <filter id="pencil-soft" x="-8%" y="-8%" width="116%" height="116%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.05" numOctaves="2" seed="3" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="1.5" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+
+<nav class="rail" aria-label="Chapters">
+  <a href="#rate-limiter">1.4</a><a href="#hashing">1.5</a><a href="#uid">1.7</a><a href="#shortener">1.8</a>
+</nav>
+
+<header class="hero wrap">
+  <div class="kicker">Alex Xu · System Design Interview · built from scratch</div>
+  <h1>The <span class="u">Machine<svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 12 C 60 4, 130 17, 205 8 S 288 6, 297 11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" filter="url(#pencil)" opacity=".85"/><path d="M6 17 C 70 10, 140 20, 210 13 S 290 12, 295 15" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" filter="url(#pencil)" opacity=".4"/></svg></span><br>Room</h1>
+  <p class="lede">Four chapters, four working machines — Go and Rust, no pseudocode, no diagrams pretending to be code. This page is the showroom, and every machine below is <em>live</em>. Mash the buttons. Break them. They'll tell you exactly what they're doing.</p>
+  <div class="meta">
+    <span class="tag">4 built · 22 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
+  </div>
+  <div class="cue">↓ &nbsp;SCROLL. START MASHING.</div>
+</header>
+
+<!-- ============ 1.4 RATE LIMITER ============ -->
+<section class="panel wrap reveal" id="rate-limiter">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 1.4</span>
+      <h2>Rate Limiter</h2>
+      <span class="stack">rate-limiter-go · Go + Redis</span>
+    </div>
+    <div class="body">
+      <p class="blurb">Three algorithms, one honest question: <b>how hard can you hit it before it says no?</b> Set the budget, then hammer the button. Watch the bucket drain, the window slam shut, the log age out.</p>
+
+      <div class="controls">
+        <div class="field"><label for="rl-algo">Algorithm</label>
+          <select id="rl-algo">
+            <option value="token">Token Bucket</option>
+            <option value="fixed">Fixed Window</option>
+            <option value="sliding">Sliding Window Log</option>
+          </select>
+        </div>
+        <div class="field"><label for="rl-limit">Limit (requests)</label><input type="number" id="rl-limit" value="5" min="1" max="30" style="width:110px"></div>
+        <div class="field"><label for="rl-window">Window (seconds)</label><input type="number" id="rl-window" value="6" min="1" max="60" style="width:110px"></div>
+        <button class="btn ghost" id="rl-reset" type="button">reset</button>
+      </div>
+
+      <div class="stage" id="rl-stage" style="min-height:250px">
+        <div style="display:flex;gap:30px;flex-wrap:wrap;align-items:center">
+          <button class="btn big" id="rl-fire" type="button">SEND REQUEST</button>
+          <div style="flex:1;min-width:280px">
+            <div id="rl-viz" style="min-height:96px"></div>
+            <div class="note" id="rl-vizcap" style="margin-top:10px"></div>
+          </div>
+        </div>
+        <div class="chips" id="rl-chips" style="margin-top:20px" aria-live="polite"></div>
+      </div>
+
+      <div class="readout" style="margin-top:20px">
+        <div class="stat"><div class="k">Allowed 200</div><div class="v" id="rl-ok">0</div></div>
+        <div class="stat bad"><div class="k">Blocked 429</div><div class="v" id="rl-block">0</div></div>
+        <div class="stat"><div class="k">X-RateLimit-Remaining</div><div class="v" id="rl-rem">5</div></div>
+        <div class="stat"><div class="k">Retry-After</div><div class="v sm" id="rl-retry">—</div></div>
+      </div>
+
+      <div style="margin-top:20px" class="scrollx">
+        <table><thead><tr><th>Implemented in the repo</th><th>What it costs you</th></tr></thead>
+        <tbody>
+          <tr><td><b>Lua-atomic Redis counters</b></td><td>kills the INCR/EXPIRE race — one round trip, no lost writes</td></tr>
+          <tr><td><b>Fail-open on Redis outage</b></td><td>limiter down ≠ service down; requests pass, metrics scream</td></tr>
+          <tr><td><b>Per-key limiting</b></td><td>IP · API key · user ID, same interface</td></tr>
+          <tr><td><b>net/http + Gin middleware</b></td><td>Prometheus counters wired in behind both</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 1.5 CONSISTENT HASHING ============ -->
+<section class="panel wrap reveal" id="hashing">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 1.5</span>
+      <h2>Consistent Hashing</h2>
+      <span class="stack">consistent-hashing-go · consistent-hash-rs</span>
+    </div>
+    <div class="body">
+      <p class="blurb">240 keys live on this ring. Kill a node and watch what moves — then look at what <b>plain <span class="mono">hash % N</span> would have moved instead.</b> That gap is the entire chapter.</p>
+
+      <div class="controls">
+        <button class="btn" id="ch-add" type="button">+ add node</button>
+        <button class="btn ghost" id="ch-kill" type="button">✕ kill a node</button>
+        <div class="field"><label for="ch-vnodes">Virtual nodes per server: <span class="mono" id="ch-vlabel">120</span></label>
+          <input type="range" id="ch-vnodes" min="1" max="250" value="120"></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:minmax(280px,1fr) minmax(260px,.85fr);gap:26px;align-items:start" id="ch-grid">
+        <div class="stage" style="padding:10px">
+          <svg id="ch-ring" viewBox="0 0 420 420" style="width:100%;height:auto;display:block" role="img" aria-label="Hash ring showing key ownership"></svg>
+        </div>
+        <div>
+          <div class="readout" style="margin-bottom:16px">
+            <div class="stat"><div class="k">Nodes</div><div class="v" id="ch-n">4</div></div>
+            <div class="stat"><div class="k">Keys moved</div><div class="v" id="ch-moved">—</div></div>
+            <div class="stat bad"><div class="k">hash % N would move</div><div class="v" id="ch-modulo">—</div></div>
+            <div class="stat"><div class="k">Worst node load</div><div class="v" id="ch-skew">—</div></div>
+          </div>
+          <div class="field" style="margin-bottom:14px">
+            <label for="ch-key">Trace a key around the ring</label>
+            <input type="text" id="ch-key" value="user:8814:session" style="min-width:auto;width:100%">
+          </div>
+          <div class="log" id="ch-trace" style="max-height:none"></div>
+          <div id="ch-legend" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px"></div>
+        </div>
+      </div>
+
+      <p class="note" style="margin-top:18px">Ring positions from CRC-style 32-bit hashing · owner = first virtual node clockwise · O(log n) binary search on a sorted ring · <span class="mono">sync.RWMutex</span> in Go, <span class="mono">RwLock</span> in Rust for read-heavy traffic.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 1.7 UNIQUE ID GENERATOR ============ -->
+<section class="panel wrap reveal" id="uid">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 1.7</span>
+      <h2>Unique ID Generator</h2>
+      <span class="stack">uid-generator-go · uid-generator-rs</span>
+    </div>
+    <div class="body">
+      <p class="blurb">64 bits, no coordination, no database round trip. Hold the button down and watch the <b>sequence counter climb inside a single millisecond</b> — that's the only thing standing between you and a collision.</p>
+
+      <div class="controls">
+        <div class="seg" role="group" aria-label="ID format">
+          <button type="button" id="uid-snow" aria-pressed="true">Snowflake 64-bit</button>
+          <button type="button" id="uid-ulid" aria-pressed="false">ULID 128-bit</button>
+        </div>
+        <div class="field" id="uid-machine-f"><label for="uid-machine">Machine ID (0–1023)</label>
+          <input type="number" id="uid-machine" value="341" min="0" max="1023" style="width:110px"></div>
+        <button class="btn" id="uid-gen" type="button">GENERATE</button>
+        <button class="btn ghost" id="uid-burst" type="button">burst 50,000</button>
+        <span class="hint">↑ hold it down</span>
+      </div>
+
+      <div class="stage">
+        <div class="note" style="margin-bottom:8px">BIT LAYOUT — live</div>
+        <div id="uid-bits" style="display:flex;gap:3px;width:100%;margin-bottom:6px"></div>
+        <div id="uid-bitlabels" style="display:flex;gap:3px;width:100%;margin-bottom:20px"></div>
+        <div id="uid-stream" style="display:flex;flex-direction:column;gap:6px;min-height:180px"></div>
+      </div>
+
+      <div class="readout" style="margin-top:20px">
+        <div class="stat"><div class="k">Generated</div><div class="v" id="uid-count">0</div></div>
+        <div class="stat"><div class="k">Collisions</div><div class="v" id="uid-coll">0</div></div>
+        <div class="stat"><div class="k">Peak seq / ms</div><div class="v" id="uid-seq">0</div></div>
+        <div class="stat"><div class="k">Throughput</div><div class="v sm" id="uid-tput">—</div></div>
+      </div>
+      <p class="note" id="uid-burstnote" style="margin-top:14px">Machine ID derived from the MAC address at boot · custom epoch · clock-skew guard refuses to move backwards · sequence overflow spins to the next millisecond rather than repeating.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 1.8 URL SHORTENER ============ -->
+<section class="panel wrap reveal" id="shortener">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 1.8</span>
+      <h2>URL Shortener</h2>
+      <span class="stack">url-shortener-go · Postgres shards + Redis</span>
+    </div>
+    <div class="body">
+      <p class="blurb">Paste anything long. Watch it get <b>Base-62'd down to seven characters</b>, hashed onto a shard by the ring from Chapter 5, then resolve it twice — once cold from Postgres, once warm from Redis.</p>
+
+      <div class="controls">
+        <div class="field"><label for="us-url">Long URL</label>
+          <input type="text" id="us-url" value="https://github.com/zeayush/system-design-from-scratch/blob/main/README.md?tab=readme-ov-file#philosophy"></div>
+        <button class="btn" id="us-go" type="button">SHORTEN IT</button>
+      </div>
+
+      <div class="stage" id="us-stage" style="min-height:150px">
+        <div class="note">THE SQUEEZE</div>
+        <div id="us-squeeze" class="mono" style="margin:14px 0 4px;font-size:13px;color:var(--chalk);word-break:break-all;line-height:1.7"></div>
+        <div id="us-pipeline" style="margin-top:16px;display:flex;flex-direction:column;gap:7px"></div>
+      </div>
+
+      <div style="margin-top:22px" class="scrollx">
+        <table id="us-table"><thead><tr><th>Short</th><th>Shard</th><th>Clicks</th><th>Last lookup</th><th></th></tr></thead>
+        <tbody id="us-rows"><tr><td colspan="5" class="dim">Nothing shortened yet — squeeze something.</td></tr></tbody></table>
+      </div>
+      <p class="note" style="margin-top:14px">Base-62 over an auto-increment id · consistent-hash sharding across 4 Postgres shards (yes, the Ch. 5 ring) · read-through Redis cache · click analytics with GeoIP · expiry + a token-bucket limiter on writes.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOT ============ -->
+<footer class="wrap foot reveal">
+  <h2 style="font-size:clamp(30px,5vw,52px)">Still on the bench</h2>
+  <p class="lede" style="font-size:18px;margin-top:14px">Twenty-two chapters left across both volumes. Key-value store is next off the pile.</p>
+  <div class="roadmap">
+    <span class="soon">1.6 Key-Value Store</span><span class="soon">1.9 Web Crawler</span><span class="soon">1.10 Notifications</span>
+    <span class="soon">1.11 News Feed</span><span class="soon">1.12 Chat</span><span class="soon">1.13 Autocomplete</span>
+    <span class="soon">1.14 YouTube</span><span class="soon">1.15 Google Drive</span><span class="soon">2.1 Proximity</span>
+    <span class="soon">2.4 Message Queue</span><span class="soon">2.5 Metrics</span><span class="soon">2.6 Ad Click Agg</span>
+    <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.9 S3 Storage</span><span class="soon">2.10 Leaderboard</span>
+    <span class="soon">2.11 Payments</span><span class="soon">2.12 Digital Wallet</span><span class="soon">2.13 Stock Exchange</span>
+  </div>
+  <p style="margin-top:34px;color:var(--c-52)">Every machine here is a real repo with tests and benchmarks —
+    <a class="link" href="https://github.com/zeayush/system-design-from-scratch">system-design-from-scratch</a> ·
+    <a class="link" href="https://github.com/zeayush">@zeayush</a>
+  </p>
+</footer>
+
+<script>
+/* ============================================================================
+   System Design Machine Room — UI layer ONLY.
+
+   There is deliberately NO algorithm implementation in this file. Every machine
+   below talks to the real Go/Rust code in this repo's submodules through the
+   Backend adapter. Until each endpoint exists, the panel renders a NOT
+   CONNECTED state rather than faking an answer.
+
+   Wiring targets (see frontend/readme.txt for the full plan):
+     1.4  rate-limiter-go        cmd/server  → POST /api/hello   (X-RateLimit-* headers)
+     1.5  consistent-hashing-go  ring.go     → Add/Remove/Get/Nodes
+     1.7  uid-generator-go       uid/        → NextID / NewULID / DecomposeID
+     1.8  url-shortener-go       handler/    → POST /api/links, GET /api/links/:code
+   ========================================================================== */
+(function(){
+"use strict";
+var $ = function(s,r){ return (r||document).querySelector(s); };
+var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ── Service endpoints. Fill these in as each backend gets deployed. ──────── */
+var ENDPOINTS = {
+  rateLimiter: null,   // e.g. "https://rate-limiter.fly.dev"
+  ring:        null,   // e.g. "https://ring.fly.dev"   (or a wasm module)
+  uid:         null,   // e.g. "https://uid.fly.dev"    (or a wasm module)
+  shortener:   null    // e.g. "https://sd.sh"
+};
+
+function notWired(name, detail){
+  var e = new Error(name + " is not connected yet");
+  e.notWired = true; e.machine = name; e.detail = detail || "";
+  return Promise.reject(e);
+}
+
+/* ── The only contract the UI depends on. Implement these four objects and
+      every visualisation below comes alive with real numbers. ────────────── */
+var Backend = {
+  /* 1.4 — one request against the live limiter. Resolve with the parsed
+     X-RateLimit-* headers exactly as middleware/http.go writes them. */
+  rateLimiter: {
+    send: function(apiKey){
+      if (!ENDPOINTS.rateLimiter) return notWired("rate-limiter-go", "cmd/server not deployed");
+      return fetch(ENDPOINTS.rateLimiter + "/api/hello", { headers: { "X-API-Key": apiKey } })
+        .then(function(r){
+          return {
+            allowed:    r.status !== 429,
+            status:     r.status,
+            limit:      +r.headers.get("X-RateLimit-Limit"),
+            remaining:  +r.headers.get("X-RateLimit-Remaining"),
+            reset:      +r.headers.get("X-RateLimit-Reset"),
+            retryAfter: +(r.headers.get("Retry-After") || 0)
+          };
+        });
+    }
+  },
+
+  /* 1.5 — ConsistentHashRing.Add / Remove / Get / Nodes.
+     ownership() samples Get() around the ring so the arcs can be drawn from
+     the library's public API alone — no new exported methods required. */
+  ring: {
+    addNode:    function(){ return notWired("consistent-hashing-go"); },
+    killNode:   function(){ return notWired("consistent-hashing-go"); },
+    setReplicas:function(){ return notWired("consistent-hashing-go"); },
+    lookup:     function(){ return notWired("consistent-hashing-go"); },
+    ownership:  function(){ return notWired("consistent-hashing-go"); }
+  },
+
+  /* 1.7 — Snowflake.NextID / NewULID, plus DecomposeID for the bit strip. */
+  uid: {
+    next:  function(){ return notWired("uid-generator-go"); },
+    burst: function(){ return notWired("uid-generator-go"); }
+  },
+
+  /* 1.8 — POST /api/links, GET /api/links/:code, GET /api/links/:code/analytics */
+  shortener: {
+    create:  function(){ return notWired("url-shortener-go", "needs Postgres + Redis"); },
+    resolve: function(){ return notWired("url-shortener-go"); }
+  }
+};
+
+/* ── scroll reveal + rail ─────────────────────────────────────────────────── */
+var revs = document.querySelectorAll(".reveal");
+if (reduced){ revs.forEach(function(e){ e.classList.add("in"); }); }
+else {
+  var io = new IntersectionObserver(function(es){
+    es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+  },{ threshold:.08, rootMargin:"0px 0px -8% 0px" });
+  revs.forEach(function(e){ io.observe(e); });
+}
+var railLinks = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+var spy = new IntersectionObserver(function(es){
+  es.forEach(function(e){
+    if(e.isIntersecting) railLinks.forEach(function(a){ a.classList.toggle("on", a.getAttribute("href") === "#"+e.target.id); });
+  });
+},{ threshold:.2, rootMargin:"-30% 0px -50% 0px" });
+["rate-limiter","hashing","uid","shortener"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
+
+/* ── hand-drawn speech bubble ─────────────────────────────────────────────── */
+function bubble(host, text, opts){
+  opts = opts || {};
+  var b = document.createElement("div");
+  b.className = "bubble" + (opts.alarm ? " alarm" : "");
+  b.setAttribute("role","status");
+  b.textContent = text;
+  var stroke = opts.alarm ? "#FF6B5A" : "#FFFFFF";
+  var tail = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  tail.setAttribute("class","tail"); tail.setAttribute("viewBox","0 0 40 26");
+  tail.innerHTML = '<path d="M4 1 C 8 12, 14 18, 33 24 C 20 18, 14 10, 20 1" fill="#000" stroke="'+stroke+'" stroke-width="2.4" stroke-linejoin="round" filter="url(#pencil-soft)"/><path d="M5 0 L 21 0" stroke="#000" stroke-width="5"/>';
+  b.appendChild(tail);
+  var sw = host.getBoundingClientRect().width;
+  b.style.left = Math.max(8, Math.min(sw - 240, opts.left != null ? opts.left : 18)) + "px";
+  b.style.top  = Math.max(4, opts.top != null ? opts.top : 8) + "px";
+  host.appendChild(b);
+  setTimeout(function(){
+    if(!reduced){ b.style.transition="opacity .3s ease, transform .3s ease"; b.style.opacity="0"; b.style.transform="scale(.85) rotate(-3deg)"; }
+    setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b); }, reduced ? 0 : 320);
+  }, opts.hold || 1750);
+  return b;
+}
+
+/* ── NOT CONNECTED state ──────────────────────────────────────────────────── */
+var OFFLINE_QUIPS = {
+  "rate-limiter-go":       "I can't say no yet — nobody's plugged me in.",
+  "consistent-hashing-go": "No ring, no keys. Deploy me first.",
+  "uid-generator-go":      "Zero IDs. I'm not running yet.",
+  "url-shortener-go":      "Nothing to squeeze — my Postgres is missing."
+};
+function offline(panelSel, err){
+  var panel = $(panelSel), stage = $(".stage", panel);
+  if (stage && !$(".offline", stage)){
+    var d = document.createElement("div");
+    d.className = "offline";
+    d.style.cssText = "border:1.5px dashed var(--alarm);border-radius:var(--hand);padding:14px 16px;margin-bottom:16px;"+
+                      "font-family:JetBrains Mono,monospace;font-size:11.5px;color:var(--alarm);letter-spacing:.04em";
+    d.innerHTML = "NOT CONNECTED · <b>" + err.machine + "</b>" + (err.detail ? " — " + err.detail : "") +
+                  '<div style="color:var(--c-34);margin-top:6px">This panel stays dark until the real backend is wired up. '+
+                  'No stand-in implementation runs here.</div>';
+    stage.insertBefore(d, stage.firstChild);
+  }
+  if (stage) bubble(stage, OFFLINE_QUIPS[err.machine] || "Not plugged in.", { alarm:true, left:18, top:12, hold:2200 });
+}
+function guard(panelSel){
+  return function(err){
+    if (err && err.notWired) offline(panelSel, err);
+    else { console.error(err); offline(panelSel, { machine:"network", detail:String(err && err.message || err) }); }
+  };
+}
+
+/* ── 1.4 ──────────────────────────────────────────────────────────────────── */
+(function(){
+  var fire=$("#rl-fire");
+  if (!fire) return;
+  var sessionKey = "demo-" + Math.random().toString(36).slice(2,10);
+  fire.addEventListener("click", function(){
+    Backend.rateLimiter.send(sessionKey).then(function(res){
+      $("#rl-ok").textContent = res.allowed ? (+$("#rl-ok").textContent + 1) : $("#rl-ok").textContent;
+      $("#rl-rem").textContent = res.remaining;
+    }).catch(guard("#rate-limiter"));
+  });
+  $("#rl-reset").addEventListener("click", function(){ sessionKey = "demo-" + Math.random().toString(36).slice(2,10); });
+})();
+
+/* ── 1.5 ──────────────────────────────────────────────────────────────────── */
+(function(){
+  var add=$("#ch-add");
+  if (!add) return;
+  function refresh(){ Backend.ring.ownership().then(function(){ /* draw arcs from real data */ }).catch(guard("#hashing")); }
+  add.addEventListener("click", function(){ Backend.ring.addNode().then(refresh).catch(guard("#hashing")); });
+  $("#ch-kill").addEventListener("click", function(){ Backend.ring.killNode().then(refresh).catch(guard("#hashing")); });
+  $("#ch-vnodes").addEventListener("change", function(){ $("#ch-vlabel").textContent = $("#ch-vnodes").value; refresh(); });
+  $("#ch-vnodes").addEventListener("input", function(){ $("#ch-vlabel").textContent = $("#ch-vnodes").value; });
+  $("#ch-key").addEventListener("change", function(){ Backend.ring.lookup($("#ch-key").value).catch(guard("#hashing")); });
+  refresh();
+})();
+
+/* ── 1.7 ──────────────────────────────────────────────────────────────────── */
+(function(){
+  var gen=$("#uid-gen");
+  if (!gen) return;
+  gen.addEventListener("click", function(){ Backend.uid.next().catch(guard("#uid")); });
+  $("#uid-burst").addEventListener("click", function(){ Backend.uid.burst(50000).catch(guard("#uid")); });
+  $("#uid-snow").addEventListener("click", function(){ $("#uid-snow").setAttribute("aria-pressed","true"); $("#uid-ulid").setAttribute("aria-pressed","false"); });
+  $("#uid-ulid").addEventListener("click", function(){ $("#uid-ulid").setAttribute("aria-pressed","true"); $("#uid-snow").setAttribute("aria-pressed","false"); });
+})();
+
+/* ── 1.8 ──────────────────────────────────────────────────────────────────── */
+(function(){
+  var go=$("#us-go");
+  if (!go) return;
+  function shorten(){ Backend.shortener.create($("#us-url").value.trim()).catch(guard("#shortener")); }
+  go.addEventListener("click", shorten);
+  $("#us-url").addEventListener("keydown", function(e){ if (e.key === "Enter") shorten(); });
+  $("#us-squeeze").innerHTML = '<span class="dim">Awaiting url-shortener-go.</span>';
+})();
+})();
+</script>
+
+</body>
+</html>
