@@ -407,85 +407,86 @@ a.link:hover{text-decoration-color:var(--chalk)}
 
 <script>
 /* ============================================================================
-   System Design Machine Room — UI layer ONLY.
+   System Design Machine Room — UI layer.
 
-   There is deliberately NO algorithm implementation in this file. Every machine
-   below talks to the real Go/Rust code in this repo's submodules through the
-   Backend adapter. Until each endpoint exists, the panel renders a NOT
-   CONNECTED state rather than faking an answer.
+   There is NO algorithm implementation in this file. Every number shown comes
+   out of the chapter libraries, compiled to WebAssembly by frontend/build.sh
+   and exposed through frontend/wasm/main.go. The chapter repos are consumed as
+   dependencies and never modified.
 
-   Wiring targets (see frontend/readme.txt for the full plan):
-     1.4  rate-limiter-go        cmd/server  → POST /api/hello   (X-RateLimit-* headers)
-     1.5  consistent-hashing-go  ring.go     → Add/Remove/Get/Nodes
-     1.7  uid-generator-go       uid/        → NextID / NewULID / DecomposeID
-     1.8  url-shortener-go       handler/    → POST /api/links, GET /api/links/:code
+     1.4  rate-limiter-go/limiter        → rlNew / rlAllow
+     1.5  consistent-hashing-go          → ringNew / Add / Remove / Get / …
+     1.7  uid-generator-go/uid           → snowNext / snowBurst / ulidNew
+     1.8  url-shortener-go               → HTTP, same-origin via /api/* proxy
+
+   The one exception is the "hash % N" counterfactual in the ring panel. That is
+   deliberately NOT in your library — it is the naive baseline the chapter exists
+   to beat — so it is computed here, in JS, purely for comparison.
    ========================================================================== */
 (function(){
 "use strict";
 var $ = function(s,r){ return (r||document).querySelector(s); };
 var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ── Service endpoints. Fill these in as each backend gets deployed. ──────── */
-var ENDPOINTS = {
-  rateLimiter: null,   // e.g. "https://rate-limiter.fly.dev"
-  ring:        null,   // e.g. "https://ring.fly.dev"   (or a wasm module)
-  uid:         null,   // e.g. "https://uid.fly.dev"    (or a wasm module)
-  shortener:   null    // e.g. "https://sd.sh"
-};
+/* ── 1.8 backend. Left null until the service is deployed; see readme.txt. ── */
+var SHORTENER_API = null;   // "/api" once the Pages Function proxy is live
 
-function notWired(name, detail){
-  var e = new Error(name + " is not connected yet");
-  e.notWired = true; e.machine = name; e.detail = detail || "";
-  return Promise.reject(e);
+/* ── Go wasm runtime, loaded lazily on first use ──────────────────────────── */
+var goRuntime = null;
+function runtime(){
+  if (goRuntime) return goRuntime;
+  goRuntime = new Promise(function(resolve, reject){
+    var s = document.createElement("script");
+    s.src = "static/wasm_exec.js";
+    s.onerror = function(){ reject(new Error("static/wasm_exec.js is missing — run frontend/build.sh")); };
+    s.onload = function(){
+      if (typeof Go !== "function"){ reject(new Error("wasm_exec.js loaded but Go is undefined")); return; }
+      var go = new Go();
+      window.__machineRoomReady = function(){ resolve(window.MachineRoom); };
+      var boot = function(inst){ go.run(inst); };
+      if (WebAssembly.instantiateStreaming){
+        WebAssembly.instantiateStreaming(fetch("static/machine.wasm"), go.importObject)
+          .then(function(r){ boot(r.instance); })
+          .catch(function(){ /* wrong MIME type on some static hosts */ fallback(); });
+      } else { fallback(); }
+      function fallback(){
+        fetch("static/machine.wasm").then(function(r){
+          if (!r.ok) throw new Error("static/machine.wasm not found (HTTP "+r.status+") — run frontend/build.sh");
+          return r.arrayBuffer();
+        }).then(function(buf){
+          return WebAssembly.instantiate(buf, go.importObject);
+        }).then(function(r){ boot(r.instance); }).catch(reject);
+      }
+    };
+    document.head.appendChild(s);
+  });
+  return goRuntime;
 }
 
-/* ── The only contract the UI depends on. Implement these four objects and
-      every visualisation below comes alive with real numbers. ────────────── */
-var Backend = {
-  /* 1.4 — one request against the live limiter. Resolve with the parsed
-     X-RateLimit-* headers exactly as middleware/http.go writes them. */
-  rateLimiter: {
-    send: function(apiKey){
-      if (!ENDPOINTS.rateLimiter) return notWired("rate-limiter-go", "cmd/server not deployed");
-      return fetch(ENDPOINTS.rateLimiter + "/api/hello", { headers: { "X-API-Key": apiKey } })
-        .then(function(r){
-          return {
-            allowed:    r.status !== 429,
-            status:     r.status,
-            limit:      +r.headers.get("X-RateLimit-Limit"),
-            remaining:  +r.headers.get("X-RateLimit-Remaining"),
-            reset:      +r.headers.get("X-RateLimit-Reset"),
-            retryAfter: +(r.headers.get("Retry-After") || 0)
-          };
-        });
-    }
-  },
-
-  /* 1.5 — ConsistentHashRing.Add / Remove / Get / Nodes.
-     ownership() samples Get() around the ring so the arcs can be drawn from
-     the library's public API alone — no new exported methods required. */
-  ring: {
-    addNode:    function(){ return notWired("consistent-hashing-go"); },
-    killNode:   function(){ return notWired("consistent-hashing-go"); },
-    setReplicas:function(){ return notWired("consistent-hashing-go"); },
-    lookup:     function(){ return notWired("consistent-hashing-go"); },
-    ownership:  function(){ return notWired("consistent-hashing-go"); }
-  },
-
-  /* 1.7 — Snowflake.NextID / NewULID, plus DecomposeID for the bit strip. */
-  uid: {
-    next:  function(){ return notWired("uid-generator-go"); },
-    burst: function(){ return notWired("uid-generator-go"); }
-  },
-
-  /* 1.8 — POST /api/links, GET /api/links/:code, GET /api/links/:code/analytics */
-  shortener: {
-    create:  function(){ return notWired("url-shortener-go", "needs Postgres + Redis"); },
-    resolve: function(){ return notWired("url-shortener-go"); }
-  }
+/* ── NOT CONNECTED state ──────────────────────────────────────────────────── */
+var QUIPS = {
+  "#rate-limiter": "I can't say no yet — nobody built me.",
+  "#hashing":      "No ring, no keys.",
+  "#uid":          "Zero IDs. I'm not running.",
+  "#shortener":    "Nothing to squeeze — my Postgres is missing."
 };
+function offline(sel, err){
+  var panel = $(sel), stage = $(".stage", panel);
+  if (!stage) return;
+  if (!$(".offline", stage)){
+    var d = document.createElement("div");
+    d.className = "offline";
+    d.style.cssText = "border:1.5px dashed var(--alarm);border-radius:var(--hand);padding:14px 16px;"+
+      "margin-bottom:16px;font-family:JetBrains Mono,monospace;font-size:11.5px;color:var(--alarm);letter-spacing:.04em";
+    d.innerHTML = "NOT CONNECTED<div style='color:var(--c-34);margin-top:6px;white-space:pre-wrap'>" +
+      String(err && err.message || err).replace(/[<>&]/g,"") + "</div>";
+    stage.insertBefore(d, stage.firstChild);
+  }
+  bubble(stage, QUIPS[sel] || "Not plugged in.", { alarm:true, left:18, top:12, hold:2200 });
+}
+function guard(sel){ return function(err){ console.error(sel, err); offline(sel, err); }; }
 
-/* ── scroll reveal + rail ─────────────────────────────────────────────────── */
+/* ── scroll reveal + rail + lazy panel boot ───────────────────────────────── */
 var revs = document.querySelectorAll(".reveal");
 if (reduced){ revs.forEach(function(e){ e.classList.add("in"); }); }
 else {
@@ -494,13 +495,25 @@ else {
   },{ threshold:.08, rootMargin:"0px 0px -8% 0px" });
   revs.forEach(function(e){ io.observe(e); });
 }
-var railLinks = Array.prototype.slice.call(document.querySelectorAll(".rail a"));
+var railLinks = [].slice.call(document.querySelectorAll(".rail a"));
 var spy = new IntersectionObserver(function(es){
   es.forEach(function(e){
     if(e.isIntersecting) railLinks.forEach(function(a){ a.classList.toggle("on", a.getAttribute("href") === "#"+e.target.id); });
   });
 },{ threshold:.2, rootMargin:"-30% 0px -50% 0px" });
 ["rate-limiter","hashing","uid","shortener"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
+
+/* Boot a panel the first time it comes near the viewport, so a visitor who
+   never scrolls past the hero never downloads the wasm binary. */
+function onFirstView(sel, fn){
+  var el = $(sel);
+  if (!el) return;
+  if (reduced || !("IntersectionObserver" in window)){ fn(); return; }
+  var ob = new IntersectionObserver(function(es){
+    if (es[0].isIntersecting){ ob.disconnect(); fn(); }
+  },{ rootMargin:"300px 0px" });
+  ob.observe(el);
+}
 
 /* ── hand-drawn speech bubble ─────────────────────────────────────────────── */
 function bubble(host, text, opts){
@@ -514,93 +527,478 @@ function bubble(host, text, opts){
   tail.setAttribute("class","tail"); tail.setAttribute("viewBox","0 0 40 26");
   tail.innerHTML = '<path d="M4 1 C 8 12, 14 18, 33 24 C 20 18, 14 10, 20 1" fill="#000" stroke="'+stroke+'" stroke-width="2.4" stroke-linejoin="round" filter="url(#pencil-soft)"/><path d="M5 0 L 21 0" stroke="#000" stroke-width="5"/>';
   b.appendChild(tail);
-  var sw = host.getBoundingClientRect().width;
-  b.style.left = Math.max(8, Math.min(sw - 240, opts.left != null ? opts.left : 18)) + "px";
+  var w = host.getBoundingClientRect().width;
+  b.style.left = Math.max(8, Math.min(w - 240, opts.left != null ? opts.left : 18)) + "px";
   b.style.top  = Math.max(4, opts.top != null ? opts.top : 8) + "px";
   host.appendChild(b);
   setTimeout(function(){
-    if(!reduced){ b.style.transition="opacity .3s ease, transform .3s ease"; b.style.opacity="0"; b.style.transform="scale(.85) rotate(-3deg)"; }
+    if(!reduced){ b.style.transition="opacity .3s, transform .3s"; b.style.opacity="0"; b.style.transform="scale(.85) rotate(-3deg)"; }
     setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b); }, reduced ? 0 : 320);
   }, opts.hold || 1750);
   return b;
 }
 
-/* ── NOT CONNECTED state ──────────────────────────────────────────────────── */
-var OFFLINE_QUIPS = {
-  "rate-limiter-go":       "I can't say no yet — nobody's plugged me in.",
-  "consistent-hashing-go": "No ring, no keys. Deploy me first.",
-  "uid-generator-go":      "Zero IDs. I'm not running yet.",
-  "url-shortener-go":      "Nothing to squeeze — my Postgres is missing."
-};
-function offline(panelSel, err){
-  var panel = $(panelSel), stage = $(".stage", panel);
-  if (stage && !$(".offline", stage)){
-    var d = document.createElement("div");
-    d.className = "offline";
-    d.style.cssText = "border:1.5px dashed var(--alarm);border-radius:var(--hand);padding:14px 16px;margin-bottom:16px;"+
-                      "font-family:JetBrains Mono,monospace;font-size:11.5px;color:var(--alarm);letter-spacing:.04em";
-    d.innerHTML = "NOT CONNECTED · <b>" + err.machine + "</b>" + (err.detail ? " — " + err.detail : "") +
-                  '<div style="color:var(--c-34);margin-top:6px">This panel stays dark until the real backend is wired up. '+
-                  'No stand-in implementation runs here.</div>';
-    stage.insertBefore(d, stage.firstChild);
+/* ═══════════════ 1.4 RATE LIMITER ═══════════════════════════════════════════
+   Every allow/deny below is limiter.Allow() from rate-limiter-go, running in
+   this tab. The bucket is yours alone — mashing it cannot affect another
+   visitor, which a shared server demo could not honestly claim.
+   ========================================================================== */
+onFirstView("#rate-limiter", function(){
+  var algoEl=$("#rl-algo"), limitEl=$("#rl-limit"), winEl=$("#rl-window"),
+      fire=$("#rl-fire"), resetBtn=$("#rl-reset"), stage=$("#rl-stage"),
+      viz=$("#rl-viz"), cap=$("#rl-vizcap"), chips=$("#rl-chips"),
+      okEl=$("#rl-ok"), blockEl=$("#rl-block"), remEl=$("#rl-rem"), retryEl=$("#rl-retry");
+
+  var M=null, handle=null, ok=0, blocked=0, last=null;
+  var tired=["Please let me rest 😮‍💨","429. Go touch grass.","I am still refilling!","Bucket's empty, friend.","The window is CLOSED.","Ask me again in a bit…"];
+
+  function limit(){ return Math.max(1, Math.min(30, parseInt(limitEl.value,10)||5)); }
+  function windowMs(){ return Math.max(1, Math.min(60, parseInt(winEl.value,10)||6))*1000; }
+
+  function rebuild(){
+    var h = M.rlNew(algoEl.value, limit(), windowMs(), 0);
+    if (h && h.error) throw new Error("limiter.New: " + h.error);
+    handle = h;
+    ok = 0; blocked = 0; last = null;
+    okEl.textContent="0"; blockEl.textContent="0"; remEl.textContent=limit(); retryEl.textContent="—";
+    chips.innerHTML=""; slots();
   }
-  if (stage) bubble(stage, OFFLINE_QUIPS[err.machine] || "Not plugged in.", { alarm:true, left:18, top:12, hold:2200 });
-}
-function guard(panelSel){
-  return function(err){
-    if (err && err.notWired) offline(panelSel, err);
-    else { console.error(err); offline(panelSel, { machine:"network", detail:String(err && err.message || err) }); }
-  };
-}
+  function slots(){
+    viz.innerHTML="";
+    var row=document.createElement("div");
+    row.style.cssText="display:flex;gap:7px;flex-wrap:wrap;align-items:center";
+    for(var i=0;i<limit();i++){
+      var t=document.createElement("div"); t.className="tok";
+      t.style.cssText="width:30px;height:30px;border:2px solid var(--c-52);border-radius:60% 40% 55% 45%/45% 55% 40% 60%;transition:background .2s,border-color .2s";
+      row.appendChild(t);
+    }
+    viz.appendChild(row);
+    var m=document.createElement("div");
+    m.style.cssText="margin-top:14px;height:9px;border:1.5px solid var(--c-18);border-radius:6px;overflow:hidden";
+    m.innerHTML='<div class="fill" style="height:100%;width:100%;background:var(--c-72)"></div>';
+    viz.appendChild(m);
+    paint(limit());
+  }
+  function paint(remaining){
+    var toks=viz.querySelectorAll(".tok");
+    for(var i=0;i<toks.length;i++){
+      var full=i<remaining;
+      toks[i].style.background = full?"var(--chalk)":"transparent";
+      toks[i].style.borderColor = full?"var(--chalk)":"var(--c-18)";
+      toks[i].classList.toggle("hatch",!full);
+    }
+  }
 
-/* ── 1.4 ──────────────────────────────────────────────────────────────────── */
-(function(){
-  var fire=$("#rl-fire");
-  if (!fire) return;
-  var sessionKey = "demo-" + Math.random().toString(36).slice(2,10);
-  fire.addEventListener("click", function(){
-    Backend.rateLimiter.send(sessionKey).then(function(res){
-      $("#rl-ok").textContent = res.allowed ? (+$("#rl-ok").textContent + 1) : $("#rl-ok").textContent;
-      $("#rl-rem").textContent = res.remaining;
-    }).catch(guard("#rate-limiter"));
+  function fireOnce(){
+    var res = M.rlAllow(handle);
+    if (res && res.error) throw new Error("limiter.Allow: " + res.error);
+    last = res;
+
+    if (res.allowed){ ok++; okEl.textContent=ok; } else { blocked++; blockEl.textContent=blocked; }
+    remEl.textContent = res.remaining;
+    retryEl.textContent = res.allowed ? "—" : (res.retryAfterMs/1000).toFixed(1)+"s";
+    paint(res.remaining);
+
+    var chip=document.createElement("span");
+    chip.className="chip"+(res.allowed?"":" c429");
+    chip.textContent=res.allowed?"200":"429";
+    chips.appendChild(chip);
+    while(chips.children.length>40) chips.removeChild(chips.firstChild);
+
+    var r=fire.getBoundingClientRect(), sr=stage.getBoundingClientRect();
+    if(!res.allowed){
+      if(!stage.querySelector(".bubble.alarm"))
+        bubble(stage, tired[Math.floor(Math.random()*tired.length)],
+               { alarm:true, left:r.right-sr.left-30, top:r.top-sr.top-96, hold:1500 });
+      if(!reduced) fire.animate([{transform:"translateX(0)"},{transform:"translateX(-7px)"},{transform:"translateX(6px)"},{transform:"translateX(0)"}],{duration:220});
+    }
+  }
+
+  function tick(){
+    if(last){
+      var left = Math.max(0, last.resetMs - Date.now());
+      var f = viz.querySelector(".fill");
+      if(f) f.style.width = Math.max(0, Math.min(1, 1 - left/windowMs()))*100+"%";
+      cap.textContent = algoEl.value==="token"
+        ? "token bucket · "+last.remaining+"/"+last.limit+" tokens · full again in "+(left/1000).toFixed(1)+"s"
+        : algoEl.value==="fixed"
+          ? "fixed window · "+last.remaining+"/"+last.limit+" left · window resets in "+(left/1000).toFixed(1)+"s"
+          : "sliding log · "+last.remaining+"/"+last.limit+" slots free · oldest entry expires in "+(left/1000).toFixed(1)+"s";
+    }
+    requestAnimationFrame(tick);
+  }
+
+  runtime().then(function(mr){
+    M = mr;
+    rebuild();
+    fire.addEventListener("click", function(){ try{ fireOnce(); }catch(e){ guard("#rate-limiter")(e); } });
+    resetBtn.addEventListener("click", function(){ try{ rebuild(); }catch(e){ guard("#rate-limiter")(e); } });
+    [algoEl,limitEl,winEl].forEach(function(el){
+      el.addEventListener("change", function(){ try{ rebuild(); }catch(e){ guard("#rate-limiter")(e); } });
+    });
+    requestAnimationFrame(tick);
+  }).catch(guard("#rate-limiter"));
+});
+
+/* ═══════════════ 1.5 CONSISTENT HASHING ═════════════════════════════════════
+   Ownership comes from ConsistentHashRing.Get(). Arc boundaries are sampled
+   through the same public API — the library never had to expose its vnodes.
+   ========================================================================== */
+onFirstView("#hashing", function(){
+  var svg=$("#ch-ring"), addBtn=$("#ch-add"), killBtn=$("#ch-kill"),
+      vEl=$("#ch-vnodes"), vLabel=$("#ch-vlabel"), legend=$("#ch-legend"),
+      nEl=$("#ch-n"), movedEl=$("#ch-moved"), modEl=$("#ch-modulo"), skewEl=$("#ch-skew"),
+      keyEl=$("#ch-key"), traceEl=$("#ch-trace"), stage=$("#hashing .stage");
+
+  var NAMES=["alpha","bravo","charlie","delta","echo","foxtrot"];
+  var STYLE=[{op:1,dash:""},{op:.8,dash:"7 5"},{op:.62,dash:"2 4"},{op:.92,dash:"17 6"},{op:.5,dash:"11 4 2 4"},{op:.75,dash:"4 4"}];
+  var CX=210, CY=210, R=132, SW=22, KEYR=172, LBLR=196, PROBES=1600;
+
+  var M=null, ring=null, nodes=["alpha","bravo","charlie","delta"];
+  var KEYS=[], KEYPOS=[], KEYHASH=[], prevOwners=null;
+  for(var i=0;i<240;i++) KEYS.push("key:"+i);
+
+  /* Keyed off NAMES, not the live nodes array — indexing into nodes would
+     reshuffle every survivor's stroke the moment one node is killed. */
+  function styleOf(name){ var i=NAMES.indexOf(name); return STYLE[(i<0?0:i)%STYLE.length]; }
+  function pol(r,f){ var a=(f*360-90)*Math.PI/180; return [CX+r*Math.cos(a), CY+r*Math.sin(a)]; }
+  function arc(a,b){
+    if(b<a) return arc(a,1)+" "+arc(0,b);
+    var s=pol(R,a), e=pol(R,b), large=(b-a)>0.5?1:0;
+    return "M"+s[0].toFixed(2)+" "+s[1].toFixed(2)+" A"+R+" "+R+" 0 "+large+" 1 "+e[0].toFixed(2)+" "+e[1].toFixed(2);
+  }
+
+  function draw(flash){
+    var owners = M.ringOwners(ring, KEYS);
+    var counts = {};
+    nodes.forEach(function(n){ counts[n]=0; });
+    owners.forEach(function(o){ if(o in counts) counts[o]++; });
+
+    var g='<circle cx="'+CX+'" cy="'+CY+'" r="'+R+'" fill="none" stroke="rgba(255,255,255,.10)" stroke-width="'+SW+'"/>';
+
+    /* ownership arcs, sampled from Get() */
+    var s = M.ringSample(ring, PROBES);
+    var paths = {};
+    nodes.forEach(function(n){ paths[n]=[]; });
+    for(var j=0;j<s.pos.length;j++){
+      var prev = s.pos[(j-1+s.pos.length)%s.pos.length];
+      var own = s.owner[j];
+      if(paths[own]) paths[own].push(arc(prev, s.pos[j]));
+    }
+    nodes.forEach(function(n){
+      if(!paths[n].length) return;
+      var st=styleOf(n);
+      g+='<path d="'+paths[n].join(" ")+'" fill="none" stroke="#fff" stroke-opacity="'+st.op+'" stroke-width="'+SW+'"'+(st.dash?' stroke-dasharray="'+st.dash+'"':'')+' filter="url(#pencil-soft)"/>';
+    });
+
+    /* keys */
+    for(var k=0;k<KEYS.length;k++){
+      var o=owners[k], st=styleOf(o), pt=pol(KEYR, KEYPOS[k]);
+      var moved = flash && prevOwners && prevOwners[k] !== o;
+      g+='<circle cx="'+pt[0].toFixed(1)+'" cy="'+pt[1].toFixed(1)+'" r="'+(moved?4.2:2.1)+'" fill="#fff" fill-opacity="'+(moved?1:st.op*.85)+'"'+(moved?' stroke="#FF6B5A" stroke-width="1.6"':'')+'>'+
+        (moved && !reduced ? '<animate attributeName="r" values="7;2.6" dur="1.1s" fill="freeze"/>' : '')+'</circle>';
+    }
+
+    /* node labels, anchored at each node's first sampled arc */
+    nodes.forEach(function(n){
+      var at=null;
+      for(var j=0;j<s.owner.length;j++){ if(s.owner[j]===n){ at=s.pos[j]; break; } }
+      if(at===null) return;
+      var lp=pol(LBLR,at), anchor = lp[0]<CX-6?"end":(lp[0]>CX+6?"start":"middle");
+      g+='<text x="'+lp[0].toFixed(1)+'" y="'+lp[1].toFixed(1)+'" fill="#fff" fill-opacity="'+styleOf(n).op+'" font-family="JetBrains Mono, monospace" font-size="10.5" text-anchor="'+anchor+'" dominant-baseline="middle">'+n+'</text>';
+    });
+
+    /* traced key */
+    var tk = keyEl.value.trim();
+    if(tk){
+      var tp = M.ringKeyPos([tk])[0], to = M.ringGet(ring, tk);
+      var a2 = pol(KEYR+16, tp);
+      g+='<line x1="'+CX+'" y1="'+CY+'" x2="'+a2[0].toFixed(1)+'" y2="'+a2[1].toFixed(1)+'" stroke="#FF6B5A" stroke-width="1.6" stroke-dasharray="4 4" filter="url(#pencil-soft)"/>';
+      g+='<circle cx="'+a2[0].toFixed(1)+'" cy="'+a2[1].toFixed(1)+'" r="4.5" fill="#FF6B5A"/>';
+      traceEl.innerHTML =
+        '<div class="dim">key</div><div class="ok">"'+tk.replace(/[<>&]/g,"")+'"</div>'+
+        '<div class="dim">crc32 → 0x'+Math.round(tp*4294967296).toString(16).padStart(8,"0")+'</div>'+
+        '<div class="dim">ring position → '+(tp*360).toFixed(2)+'°</div>'+
+        '<div class="dim">walk clockwise →</div>'+
+        '<div class="ok">owner: '+(to||"(ring empty)")+'</div>';
+    }
+    svg.innerHTML=g;
+
+    var worst=0; nodes.forEach(function(n){ if(counts[n]>worst) worst=counts[n]; });
+    skewEl.textContent = nodes.length ? (worst/(KEYS.length/nodes.length)).toFixed(2)+"×" : "—";
+    nEl.textContent = nodes.length;
+
+    legend.innerHTML = nodes.map(function(n){
+      var st=styleOf(n);
+      return '<span style="display:flex;align-items:center;gap:7px;font-family:JetBrains Mono,monospace;font-size:10.5px;color:var(--c-52)">'+
+        '<svg width="26" height="8" aria-hidden="true"><line x1="1" y1="4" x2="25" y2="4" stroke="#fff" stroke-opacity="'+st.op+'" stroke-width="5"'+(st.dash?' stroke-dasharray="'+st.dash+'"':'')+'/></svg>'+
+        n+' <b style="color:var(--chalk)">'+counts[n]+'</b></span>';
+    }).join("");
+
+    if(prevOwners){
+      var mv=0;
+      for(var q=0;q<owners.length;q++) if(prevOwners[q]!==owners[q]) mv++;
+      movedEl.textContent = (mv/KEYS.length*100).toFixed(1)+"%";
+    }
+    prevOwners = owners;
+  }
+
+  /* The naive baseline this chapter exists to beat. Deliberately computed here
+     and not in the library, because the library does not implement it. */
+  function moduloCost(a,b){
+    if(a===b || a===0 || b===0) return null;
+    var mv=0;
+    for(var i=0;i<KEYHASH.length;i++) if((KEYHASH[i]%a)!==(KEYHASH[i]%b)) mv++;
+    return (mv/KEYHASH.length*100).toFixed(1)+"%";
+  }
+  function change(fn){
+    var before=nodes.length;
+    fn();
+    draw(true);
+    var m=moduloCost(before,nodes.length);
+    modEl.textContent = m===null ? "—" : m;
+  }
+
+  runtime().then(function(mr){
+    M = mr;
+    ring = M.ringNew(parseInt(vEl.value,10));
+    if(ring && ring.error) throw new Error("ring.New: "+ring.error);
+    nodes.forEach(function(n){ M.ringAdd(ring, n, 1); });
+    KEYPOS = M.ringKeyPos(KEYS);
+    KEYHASH = KEYPOS.map(function(p){ return Math.round(p*4294967296); });
+
+    addBtn.addEventListener("click", function(){
+      if(nodes.length>=6){ bubble(stage,"Six is plenty!",{left:20,top:20,hold:1300}); return; }
+      change(function(){
+        for(var i=0;i<NAMES.length;i++) if(nodes.indexOf(NAMES[i])===-1){ nodes.push(NAMES[i]); M.ringAdd(ring,NAMES[i],1); break; }
+      });
+    });
+    killBtn.addEventListener("click", function(){
+      if(nodes.length<=1){ bubble(stage,"Somebody has to hold the keys.",{alarm:true,left:20,top:20,hold:1600}); return; }
+      change(function(){
+        var v=nodes[Math.floor(Math.random()*nodes.length)];
+        M.ringRemove(ring,v);
+        nodes.splice(nodes.indexOf(v),1);
+      });
+    });
+    var pending=false;
+    vEl.addEventListener("input", function(){
+      vLabel.textContent=vEl.value;
+      if(pending) return;
+      pending=true;
+      requestAnimationFrame(function(){
+        pending=false;
+        M.ringRebuild(ring, parseInt(vEl.value,10), nodes);  // New() fixes replicas for life
+        draw(false); modEl.textContent="—";
+      });
+    });
+    keyEl.addEventListener("input", function(){ draw(false); });
+
+    draw(false);
+    movedEl.textContent="—";
+  }).catch(guard("#hashing"));
+});
+
+/* ═══════════════ 1.7 UNIQUE ID GENERATOR ════════════════════════════════════
+   Snowflake.NextID() and NewULID() run for real. IDs cross the wasm boundary
+   as strings — an int64 would lose its low bits as a JS number.
+   ========================================================================== */
+onFirstView("#uid", function(){
+  var snowBtn=$("#uid-snow"), ulidBtn=$("#uid-ulid"), machEl=$("#uid-machine"), machF=$("#uid-machine-f"),
+      genBtn=$("#uid-gen"), burstBtn=$("#uid-burst"), bitsEl=$("#uid-bits"), lblEl=$("#uid-bitlabels"),
+      streamEl=$("#uid-stream"), cntEl=$("#uid-count"), collEl=$("#uid-coll"), seqEl=$("#uid-seq"),
+      tputEl=$("#uid-tput"), note=$("#uid-burstnote");
+
+  var M=null, mode="snow", snow=null, total=0, collisions=0, peakSeq=0, seen=new Set();
+
+  function groups(){
+    return mode==="snow"
+      ? [{n:1,l:"unused",s:0},{n:41,l:"timestamp",s:1},{n:10,l:"machine",s:42},{n:12,l:"sequence",s:52}]
+      : [{n:48,l:"timestamp",s:0},{n:80,l:"randomness",s:48}];
+  }
+  function renderBits(bits){
+    var h="",lh="";
+    groups().forEach(function(g){
+      var inner="";
+      for(var i=0;i<g.n;i++){
+        var on = bits[g.s+i]==="1";
+        inner+='<i style="flex:1;height:34px;min-width:1px;border-radius:1px;'+
+          (on?'background:#fff':'background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16)')+'"></i>';
+      }
+      h+='<div style="flex:'+g.n+';display:flex;gap:1px">'+inner+'</div>';
+      lh+='<div style="flex:'+g.n+';border-top:1.5px solid var(--c-18);padding-top:5px;text-align:center;'+
+          'font-family:JetBrains Mono,monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-34);overflow:hidden;white-space:nowrap">'+g.l+' · '+g.n+'b</div>';
+    });
+    bitsEl.innerHTML=h; lblEl.innerHTML=lh;
+    bitsEl.style.gap="6px"; lblEl.style.gap="6px";
+  }
+  function row(id, meta){
+    total++; cntEl.textContent=total.toLocaleString();
+    if(seen.has(id)) { collisions++; collEl.textContent=collisions; } else seen.add(id);
+    if(seen.size>5000) seen.clear();
+    var d=document.createElement("div");
+    d.style.cssText="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap;border-bottom:1.5px dashed var(--c-09);padding-bottom:6px";
+    d.innerHTML='<span class="mono" style="font-size:16px;font-weight:700;color:var(--chalk)">'+id+'</span><span class="note">'+meta+'</span>';
+    if(!reduced) d.animate([{opacity:0,transform:"translateY(-8px)"},{opacity:1,transform:"none"}],{duration:180});
+    streamEl.insertBefore(d, streamEl.firstChild);
+    while(streamEl.children.length>7) streamEl.removeChild(streamEl.lastChild);
+  }
+  function bitsFromBytes(bytes){
+    var s="";
+    for(var i=0;i<bytes.length;i++) s += bytes[i].toString(2).padStart(8,"0");
+    return s;
+  }
+
+  function one(){
+    if(mode==="snow"){
+      var r=M.snowNext(snow);
+      if(r.error) throw new Error("Snowflake.NextID: "+r.error);
+      if(r.seq>peakSeq){ peakSeq=r.seq; seqEl.textContent=peakSeq; }
+      renderBits(r.bits.padStart(64,"0"));
+      row(r.id, "ts "+r.tsMs+" · machine "+r.machine+" · seq "+r.seq);
+    } else {
+      var u=M.ulidNew();
+      if(u.error) throw new Error("NewULID: "+u.error);
+      renderBits(bitsFromBytes(u.bytes));
+      row(u.id, "48-bit time + 80 random bits · lexicographically sortable");
+    }
+  }
+
+  function setMode(m){
+    mode=m;
+    snowBtn.setAttribute("aria-pressed", m==="snow");
+    ulidBtn.setAttribute("aria-pressed", m==="ulid");
+    machF.style.display = m==="snow" ? "" : "none";
+    streamEl.innerHTML=""; seen.clear(); total=0; collisions=0; peakSeq=0;
+    cntEl.textContent="0"; collEl.textContent="0"; tputEl.textContent="—";
+    seqEl.textContent = m==="snow" ? "0" : "n/a";
+    one();
+  }
+  function newSnow(){
+    var h=M.snowNew(Math.max(0,Math.min(1023,parseInt(machEl.value,10)||0)), 0);
+    if(h && h.error) throw new Error("NewSnowflake: "+h.error);
+    snow=h;
+  }
+
+  runtime().then(function(mr){
+    M=mr; newSnow(); setMode("snow");
+    var wrap=function(f){ return function(){ try{ f(); }catch(e){ guard("#uid")(e); } }; };
+    genBtn.addEventListener("click", wrap(one));
+    machEl.addEventListener("change", wrap(function(){ newSnow(); setMode("snow"); }));
+    snowBtn.addEventListener("click", wrap(function(){ setMode("snow"); }));
+    ulidBtn.addEventListener("click", wrap(function(){ setMode("ulid"); }));
+
+    var held=null;
+    genBtn.addEventListener("pointerdown", function(){ setTimeout(function(){ if(!held) held=setInterval(wrap(one),55); },260); });
+    ["pointerup","pointerleave","pointercancel","blur"].forEach(function(ev){
+      genBtn.addEventListener(ev, function(){ if(held){ clearInterval(held); held=null; } });
+    });
+
+    burstBtn.addEventListener("click", wrap(function(){
+      burstBtn.disabled=true; burstBtn.textContent="generating…";
+      setTimeout(wrap(function(){
+        var N=50000, r = mode==="snow" ? M.snowBurst(snow,N) : M.ulidBurst(N);
+        if(r.error) throw new Error(r.error);
+        var dupes = r.n - r.unique;
+        collisions += dupes; collEl.textContent=collisions;
+        total += r.n; cntEl.textContent=total.toLocaleString();
+        tputEl.textContent = Math.round(r.n/(r.ms/1000)).toLocaleString()+"/s";
+        if(mode==="snow"){
+          peakSeq=Math.max(peakSeq,r.maxSeq); seqEl.textContent=peakSeq;
+          note.innerHTML="<b style='color:var(--chalk)'>50,000 real IDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
+            "The 12-bit sequence filled up and NextID parked for the clock to tick <b style='color:var(--chalk)'>"+r.rollovers+"</b> times — that park is the whole safety guarantee.";
+        } else {
+          note.innerHTML="<b style='color:var(--chalk)'>50,000 real ULIDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
+            "80 fresh random bits under a millisecond timestamp: sortable by creation time, and still never touching.";
+        }
+        burstBtn.disabled=false; burstBtn.textContent="burst 50,000";
+      }),30);
+    }));
+  }).catch(guard("#uid"));
+});
+
+/* ═══════════════ 1.8 URL SHORTENER ══════════════════════════════════════════
+   The only machine that cannot be WebAssembly: it needs Postgres and Redis.
+   Calls go same-origin through /api/* so the browser never issues a
+   cross-origin request and url-shortener-go needs no CORS middleware added.
+   ========================================================================== */
+onFirstView("#shortener", function(){
+  var urlEl=$("#us-url"), goBtn=$("#us-go"), sq=$("#us-squeeze"), pipe=$("#us-pipeline"),
+      rows=$("#us-rows"), stage=$("#us-stage");
+  var links=[], busy=false;
+
+  function step(text, delay){
+    var d=document.createElement("div");
+    d.className="mono"; d.style.cssText="font-size:12px;color:var(--c-52);opacity:0";
+    d.innerHTML='<span style="color:var(--c-34)">›</span> '+text;
+    pipe.appendChild(d);
+    setTimeout(function(){ d.style.transition="opacity .25s"; d.style.opacity="1"; }, reduced?0:delay);
+  }
+  function render(){
+    if(!links.length){ rows.innerHTML='<tr><td colspan="5" class="dim">Nothing shortened yet.</td></tr>'; return; }
+    rows.innerHTML = links.map(function(l,i){
+      return '<tr><td><b>'+l.short_url+'</b></td><td>'+(l.shard||'<span class="dim">—</span>')+'</td><td>'+l.clicks+'</td>'+
+             '<td>'+(l.last||'<span class="dim">never</span>')+'</td>'+
+             '<td><button class="btn ghost" style="font-size:16px;padding:3px 14px 5px" data-i="'+i+'" type="button">resolve</button></td></tr>';
+    }).join("");
+  }
+  rows.addEventListener("click", function(e){
+    var b=e.target.closest("button[data-i]");
+    if(!b || !SHORTENER_API) { if(b) offline("#shortener", new Error("url-shortener-go is not deployed. Set SHORTENER_API and add functions/api/[[path]].js")); return; }
+    var l=links[+b.dataset.i], t0=performance.now();
+    fetch(SHORTENER_API+"/links/"+encodeURIComponent(l.short_code))
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var ms=(performance.now()-t0).toFixed(1);
+        l.clicks = j.click_count != null ? j.click_count : l.clicks;
+        l.last='<span class="ok">'+ms+' ms</span> <span class="dim">GET /api/links/'+l.short_code+'</span>';
+        render();
+      }).catch(guard("#shortener"));
   });
-  $("#rl-reset").addEventListener("click", function(){ sessionKey = "demo-" + Math.random().toString(36).slice(2,10); });
-})();
 
-/* ── 1.5 ──────────────────────────────────────────────────────────────────── */
-(function(){
-  var add=$("#ch-add");
-  if (!add) return;
-  function refresh(){ Backend.ring.ownership().then(function(){ /* draw arcs from real data */ }).catch(guard("#hashing")); }
-  add.addEventListener("click", function(){ Backend.ring.addNode().then(refresh).catch(guard("#hashing")); });
-  $("#ch-kill").addEventListener("click", function(){ Backend.ring.killNode().then(refresh).catch(guard("#hashing")); });
-  $("#ch-vnodes").addEventListener("change", function(){ $("#ch-vlabel").textContent = $("#ch-vnodes").value; refresh(); });
-  $("#ch-vnodes").addEventListener("input", function(){ $("#ch-vlabel").textContent = $("#ch-vnodes").value; });
-  $("#ch-key").addEventListener("change", function(){ Backend.ring.lookup($("#ch-key").value).catch(guard("#hashing")); });
-  refresh();
-})();
-
-/* ── 1.7 ──────────────────────────────────────────────────────────────────── */
-(function(){
-  var gen=$("#uid-gen");
-  if (!gen) return;
-  gen.addEventListener("click", function(){ Backend.uid.next().catch(guard("#uid")); });
-  $("#uid-burst").addEventListener("click", function(){ Backend.uid.burst(50000).catch(guard("#uid")); });
-  $("#uid-snow").addEventListener("click", function(){ $("#uid-snow").setAttribute("aria-pressed","true"); $("#uid-ulid").setAttribute("aria-pressed","false"); });
-  $("#uid-ulid").addEventListener("click", function(){ $("#uid-ulid").setAttribute("aria-pressed","true"); $("#uid-snow").setAttribute("aria-pressed","false"); });
-})();
-
-/* ── 1.8 ──────────────────────────────────────────────────────────────────── */
-(function(){
-  var go=$("#us-go");
-  if (!go) return;
-  function shorten(){ Backend.shortener.create($("#us-url").value.trim()).catch(guard("#shortener")); }
-  go.addEventListener("click", shorten);
-  $("#us-url").addEventListener("keydown", function(e){ if (e.key === "Enter") shorten(); });
-  $("#us-squeeze").innerHTML = '<span class="dim">Awaiting url-shortener-go.</span>';
-})();
+  function shorten(){
+    if(busy) return;
+    var raw=urlEl.value.trim();
+    if(!raw){ bubble(stage,"Give me something to squeeze.",{alarm:true,left:16,top:10,hold:1500}); return; }
+    if(!SHORTENER_API){
+      offline("#shortener", new Error(
+        "url-shortener-go is not deployed yet.\n\nIt needs Postgres + Redis, so it cannot run as WebAssembly\n"+
+        "like the other three. Deploy its docker-compose stack, then set\n"+
+        "SHORTENER_API = \"/api\" and add frontend/functions/api/[[path]].js"));
+      return;
+    }
+    busy=true; goBtn.disabled=true; pipe.innerHTML="";
+    var t0=performance.now();
+    step('POST /api/links', 40);
+    fetch(SHORTENER_API+"/links", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ url: raw })
+    }).then(function(r){
+      if(r.status===429) throw new Error("429 from the built-in rate limiter — url-shortener-go applies rate-limiter-go to /api, keyed by IP.");
+      return r.json().then(function(j){ if(!r.ok) throw new Error(j.error||("HTTP "+r.status)); return j; });
+    }).then(function(j){
+      var ms=(performance.now()-t0).toFixed(1);
+      step('shortcode.Random() → <span style="color:var(--chalk)">'+j.short_code+'</span> <span style="color:var(--c-34)">(6 chars, crypto/rand, 62⁶ = 56.8 billion)</span>', 300);
+      step('consistent-hash ring → shard for "'+j.short_code+'"', 560);
+      step('INSERT + cache warm <span style="color:var(--c-34)">'+ms+' ms round trip</span>', 820);
+      var from=raw.length, to=j.short_url.length;
+      sq.innerHTML='<span style="font-size:26px;font-family:JetBrains Mono,monospace;font-weight:700;color:var(--chalk)">'+j.short_url+'</span>'+
+        '<span class="note" style="margin-left:14px">'+from+' → '+to+' chars · '+Math.round((1-to/from)*100)+'% smaller</span>';
+      links.unshift({ short_code:j.short_code, short_url:j.short_url, shard:null, clicks:0, last:null });
+      if(links.length>6) links.pop();
+      render();
+      bubble(stage,"Squeezed. "+Math.round((1-to/from)*100)+"% gone.",{left:20,top:34,hold:1700});
+      busy=false; goBtn.disabled=false;
+    }).catch(function(e){ busy=false; goBtn.disabled=false; guard("#shortener")(e); });
+  }
+  goBtn.addEventListener("click", shorten);
+  urlEl.addEventListener("keydown", function(e){ if(e.key==="Enter") shorten(); });
+  sq.innerHTML='<span class="dim">↑ paste a monster of a URL and hit the button</span>';
+  render();
+});
 })();
 </script>
+
 
 </body>
 </html>

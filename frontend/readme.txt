@@ -5,26 +5,50 @@ A single-page, playable showroom for the implementations in this repo. Scroll
 down and each chapter is a machine you operate, drawn in white pencil on pure
 black.
 
-STATUS: UI shell only. There is deliberately NO algorithm implementation in this
-directory. Every machine talks to the real Go/Rust code in the submodules through
-the Backend adapter in index.html. Until each endpoint exists, that panel renders
-a NOT CONNECTED state instead of faking an answer.
+STATUS: Phases 1-3 and 5 done. The page is driven by the real chapter
+libraries compiled to WebAssembly. There is no algorithm implementation in this
+directory -- frontend/wasm/ is a marshalling shim only, and the chapter repos
+are consumed as dependencies and never modified.
 
-Open index.html in any browser. No build step, no dependencies.
+  1.4  LIVE   limiter.Allow() runs in your tab
+  1.5  LIVE   ConsistentHashRing.Get() drives every arc and dot
+  1.7  LIVE   Snowflake.NextID() / NewULID() generate every ID shown
+  1.8  DORMANT needs Postgres + Redis; proxy is written, service not deployed
 
+BUILD
 
-WHY THERE IS NO JS IMPLEMENTATION
----------------------------------
+  git submodule update --init --recursive
+  ./build.sh                       # needs Go 1.22+; writes static/
+  python3 -m http.server 8000      # wasm will not load over file://
 
-The first draft of this page reimplemented all four algorithms in JavaScript. That
-was the wrong shape: it created a second, drifting implementation of work that
-already exists in Go and Rust. Those reimplementations have been removed. The page
-now renders and animates; it does not compute.
+HOW IT FITS TOGETHER
 
-The visual layer is the part worth keeping. Ring arcs, the 64-bit strip, token
-animation, latency readouts and the comic bubbles are all pure rendering — they
-read from whatever the Backend adapter returns.
+  wasm/go.mod      replace directives point at the three submodules, so the
+                   libraries are dependencies. uid-generator-go declares
+                   `module uid-generator-go` (not a URL), so replace is the
+                   only way to import it at all.
+  wasm/main.go     ~16 exported functions, all marshalling. No logic.
+  index.html       UI + the Backend adapter. Loads the wasm lazily, per panel,
+                   on first scroll into view.
+  functions/       Cloudflare Pages Function proxying /api/* to 1.8.
+  build.sh         builds static/machine.wasm + copies wasm_exec.js.
 
+TWO PLACES THE FRONTEND COMPUTES SOMETHING, AND WHY
+
+  * ringKeyPos() recomputes CRC-32 to decide where to DRAW a key. ring.go's
+    keyHash is unexported. Ownership always comes from Get(); if the library
+    ever changes its hash, dots move but colours stay correct.
+  * The "hash % N would move" counterfactual is computed in JS because the
+    library deliberately does not implement modulo hashing -- it is the naive
+    baseline the chapter exists to beat.
+
+RING ARCS WITHOUT EXPORTING VNODES
+
+  ConsistentHashRing does not expose virtual-node positions, and adding an
+  accessor would mean editing 1.5. Instead ringSample() hashes 1,600 probe
+  keys, sorts them by position, and asks Get() who owns each. Consecutive
+  probes bound an arc. Rendering approximation only -- never used for the
+  "keys moved" figure, which is an exact diff of Get() over all 240 keys.
 
 CORRECTIONS FOUND WHEN READING THE REAL CODE
 --------------------------------------------
@@ -110,5 +134,9 @@ bit fields), from Google Fonts with real fallback stacks.
 FILES
 -----
 
-index.html    markup, styles, and the Backend adapter — no algorithms
+index.html          markup, styles, Backend adapter -- no algorithms
+wasm/               Go module: marshalling shim over the chapter libraries
+functions/          Cloudflare Pages Function: same-origin proxy for 1.8
+build.sh            builds static/machine.wasm
+PHASE4-DEPLOY.md    ready-to-file deployment issue
 readme.txt    this file
