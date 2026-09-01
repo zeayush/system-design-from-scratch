@@ -905,8 +905,17 @@ onFirstView("#uid", function(){
         tputEl.textContent = Math.round(r.n/(r.ms/1000)).toLocaleString()+"/s";
         if(mode==="snow"){
           peakSeq=Math.max(peakSeq,r.maxSeq); seqEl.textContent=peakSeq;
-          note.innerHTML="<b style='color:var(--chalk)'>50,000 real IDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
-            "The 12-bit sequence filled up and NextID parked for the clock to tick <b style='color:var(--chalk)'>"+r.rollovers+"</b> times — that park is the whole safety guarantee.";
+          /* Filling the 12-bit sequence needs >4.095M NextID calls sustained
+             for a full millisecond. Verified against the real library
+             (frontend/wasm/smoke.mjs): this wasm build peaks around 1.3-1.9M/s,
+             so rollovers is usually 0 even at n=1,000,000 — that is the honest
+             result, not a bug, and the copy below reports whichever is true. */
+          note.innerHTML = r.rollovers > 0
+            ? "<b style='color:var(--chalk)'>50,000 real IDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
+              "The 12-bit sequence filled up and NextID parked for the clock to tick <b style='color:var(--chalk)'>"+r.rollovers+"</b> times — that park is the whole safety guarantee."
+            : "<b style='color:var(--chalk)'>50,000 real IDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
+              "Peak sequence hit <b style='color:var(--chalk)'>"+r.maxSeq+"</b> of a possible 4,095 per millisecond — nowhere near the ceiling, "+
+              "which is exactly why collisions stay at zero. The park-for-the-next-millisecond guarantee only kicks in past that line.";
         } else {
           note.innerHTML="<b style='color:var(--chalk)'>50,000 real ULIDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
             "80 fresh random bits under a millisecond timestamp: sortable by creation time, and still never touching.";
