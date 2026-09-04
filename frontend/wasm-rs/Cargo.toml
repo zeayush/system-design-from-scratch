@@ -1,0 +1,29 @@
+# Rust half of the Machine Room wasm bridge — chapter 1.13.
+#
+# This crate contains NO algorithms. It mounts the real source files out of
+# 1.13-Search-Autocomplete/autocomplete-rs and marshals them across the wasm
+# boundary, exactly as wasm/go.mod's replace directives do for the Go chapters.
+# See src/lib.rs for why the modules are mounted by path rather than pulled in
+# as a normal crate dependency.
+
+[package]
+name = "machine-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+# TrieStats derives serde::Serialize, so the chapter's own modules need serde
+# present. serde_json is this shim's wire format back into JS.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"   # the artifact ships over the wire; size beats a few ns here
+lto = true
+codegen-units = 1
+panic = "abort"

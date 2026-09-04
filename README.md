@@ -13,7 +13,8 @@ system-design-from-scratch/
 ├── 1.4-Rate-Limiter/          → rate-limiter-go
 ├── 1.5-Consistent-Hashing/    → consistent-hashing-go · consistent-hash-rs
 ├── 1.7-Unique-ID-Generator/   → uid-generator-go · uid-generator-rs
-└── 1.8-URL-Shortener/         → url-shortener-go
+├── 1.8-URL-Shortener/         → url-shortener-go
+└── 1.13-Search-Autocomplete/  → autocomplete-rs
 ```
 
 Clone with all submodules:
@@ -43,7 +44,7 @@ git submodule update --init --recursive
 | `1.10-Notification-System` | Ch. 10 — Notification System | — | — | 🔜 |
 | `1.11-News-Feed` | Ch. 11 — News Feed System | — | — | 🔜 |
 | `1.12-Chat-System` | Ch. 12 — Chat System | — | — | 🔜 |
-| `1.13-Search-Autocomplete` | Ch. 13 — Search Autocomplete | — | — | 🔜 |
+| [`1.13-Search-Autocomplete`](1.13-Search-Autocomplete/) | Ch. 13 — Search Autocomplete | [autocomplete-rs](https://github.com/zeayush/autocomplete-rs) | Rust | ✅ |
 | `1.14-YouTube` | Ch. 14 — YouTube | — | — | 🔜 |
 | `1.15-Google-Drive` | Ch. 15 — Google Drive | — | — | 🔜 |
 
@@ -107,6 +108,32 @@ Full production service in Go — Base-62 short codes, consistent-hash database 
 
 ---
 
+### Book 1 · Ch. 13 — Search Autocomplete · [`autocomplete-rs`](https://github.com/zeayush/autocomplete-rs)
+
+Full autocomplete engine in Rust — radix trie over bytes, top-K by frequency with a bounded min-heap, Levenshtein typo tolerance to 2 edits, multi-tenant namespaces, RocksDB persistence behind a write-behind batcher, served over axum.
+
+**Key ideas implemented:** edge split/merge so no non-terminal node keeps a single child, `max_subtree_freq` cached per node so top-K skips any subtree that cannot beat the heap cutoff, one Levenshtein DP row carried down the walk and abandoned as soon as its minimum exceeds the budget (Hanov's method), writes queryable immediately from the in-memory trie while a background task coalesces up to 1000 ops or 50ms into one RocksDB `WriteBatch`.
+
+Benchmarks on a 100K-term corpus: prefix search 270ns–16µs depending on prefix length, fuzzy search 326µs at budget 1 and 4.13ms at budget 2 — the last of which sits just under the 5ms target with nothing to spare, and is why the HTTP layer caps `typo` at 2.
+
+---
+
+## The Machine Room
+
+`frontend/` is a single-page showroom where four of these chapters run **live in the browser** — the real libraries compiled to WebAssembly, not reimplementations. Mash the buttons: overload the rate limiter, kill a node on the hash ring, spam the ID generator, and type at an autocomplete backed by 50,000 real English words carrying their real Google web-corpus frequencies.
+
+Ch. 8 is the exception: it needs Postgres and Redis, so it cannot run as WebAssembly. Its same-origin proxy is written and the panel is wired, but the service is not deployed. Ch. 13's write path — RocksDB batching, restart recovery, multi-tenancy — is out of the browser for the same reason; the panel demonstrates the query path only.
+
+```bash
+cd frontend
+./build.sh                    # Go 1.22+; Rust + wasm-bindgen for 1.13
+python3 -m http.server 8000   # wasm will not load over file://
+```
+
+See [`frontend/readme.txt`](frontend/readme.txt) for how the shims stay honest — no algorithm is implemented in that directory, and the chapter repos are consumed unmodified.
+
+---
+
 ## Philosophy
 
 - **Real code, not diagrams.** Every chapter is a working, tested codebase.
@@ -138,6 +165,13 @@ cargo bench
 # URL shortener (Docker)
 cd 1.8-URL-Shortener/url-shortener-go
 docker compose up --build
+```
+
+```bash
+# Search autocomplete in Rust
+cd 1.13-Search-Autocomplete/autocomplete-rs
+cargo test
+cargo bench
 ```
 
 ---

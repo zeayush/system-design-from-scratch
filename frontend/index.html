@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Four chapters of Alex Xu's System Design Interview, built from scratch in Go and Rust - and playable. A rate limiter you can overload, a hash ring you can break, an ID generator you can spam, a URL shortener you can squeeze.">
+<meta name="description" content="Five chapters of Alex Xu's System Design Interview, built from scratch in Go and Rust - and playable. A rate limiter you can overload, a hash ring you can break, an ID generator you can spam, a URL shortener you can squeeze, an autocomplete you can misspell at.">
 <meta name="color-scheme" content="dark">
 <meta property="og:title" content="System Design Machine Room">
-<meta property="og:description" content="Four system design chapters, built from scratch - and playable in the browser.">
+<meta property="og:description" content="Five system design chapters, built from scratch - and playable in the browser.">
 <meta property="og:type" content="website">
 <title>System Design Machine Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,15 +203,15 @@ a.link:hover{text-decoration-color:var(--chalk)}
 </svg>
 
 <nav class="rail" aria-label="Chapters">
-  <a href="#rate-limiter">1.4</a><a href="#hashing">1.5</a><a href="#uid">1.7</a><a href="#shortener">1.8</a>
+  <a href="#rate-limiter">1.4</a><a href="#hashing">1.5</a><a href="#uid">1.7</a><a href="#shortener">1.8</a><a href="#autocomplete">1.13</a>
 </nav>
 
 <header class="hero wrap">
   <div class="kicker">Alex Xu · System Design Interview · built from scratch</div>
   <h1>The <span class="u">Machine<svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 12 C 60 4, 130 17, 205 8 S 288 6, 297 11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" filter="url(#pencil)" opacity=".85"/><path d="M6 17 C 70 10, 140 20, 210 13 S 290 12, 295 15" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" filter="url(#pencil)" opacity=".4"/></svg></span><br>Room</h1>
-  <p class="lede">Four chapters, four working machines — Go and Rust, no pseudocode, no diagrams pretending to be code. This page is the showroom, and every machine below is <em>live</em>. Mash the buttons. Break them. They'll tell you exactly what they're doing.</p>
+  <p class="lede">Five chapters, five working machines — Go and Rust, no pseudocode, no diagrams pretending to be code. This page is the showroom, and every machine below is <em>live</em>. Mash the buttons. Break them. They'll tell you exactly what they're doing.</p>
   <div class="meta">
-    <span class="tag">4 built · 22 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
+    <span class="tag">5 built · 21 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
   </div>
   <div class="cue">↓ &nbsp;SCROLL. START MASHING.</div>
 </header>
@@ -387,13 +387,53 @@ a.link:hover{text-decoration-color:var(--chalk)}
   </div>
 </section>
 
+<!-- ============ 1.13 SEARCH AUTOCOMPLETE ============ -->
+<section class="panel wrap reveal" id="autocomplete">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 1.13</span>
+      <h2>Search Autocomplete</h2>
+      <span class="stack">autocomplete-rs · Rust → wasm</span>
+    </div>
+    <div class="body">
+      <p class="blurb">50,000 real English words, weighted by <b>real Google web-corpus counts</b> — not a fixture, not a random string generator. The radix trie answers exact prefixes in <b>microseconds</b>. Then misspell one on purpose and watch what forgiveness costs.</p>
+
+      <div class="controls">
+        <div class="field"><label for="ac-q">Query</label>
+          <input type="text" id="ac-q" placeholder="type — try &quot;sys&quot;, then misspell &quot;seperate&quot;" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="seg" role="group" aria-label="Edit budget">
+          <button type="button" id="ac-t0" aria-pressed="true">exact</button>
+          <button type="button" id="ac-t1" aria-pressed="false">1 edit</button>
+          <button type="button" id="ac-t2" aria-pressed="false">2 edits</button>
+        </div>
+        <span class="hint">↑ then break the spelling</span>
+      </div>
+
+      <div class="stage">
+        <div class="note" style="margin-bottom:12px">TOP 10 BY FREQUENCY — <span id="ac-mode">exact prefix</span></div>
+        <div id="ac-hits" style="display:flex;flex-direction:column;gap:6px;min-height:252px"></div>
+      </div>
+
+      <div class="readout" style="margin-top:20px">
+        <div class="stat"><div class="k">Query time</div><div class="v sm" id="ac-us">—</div></div>
+        <div class="stat"><div class="k">Terms</div><div class="v sm" id="ac-terms">—</div></div>
+        <div class="stat"><div class="k">Trie nodes</div><div class="v sm" id="ac-nodes">—</div></div>
+        <div class="stat"><div class="k">Edge labels</div><div class="v sm" id="ac-bytes">—</div></div>
+      </div>
+      <p class="note" id="ac-timing" style="margin-top:12px">&nbsp;</p>
+      <p class="note" style="margin-top:10px">Radix trie over bytes · every node caches <span class="mono">max_subtree_freq</span>, so top-K skips any subtree that cannot beat the heap cutoff · one Levenshtein DP row carried down the walk, abandoned the moment its minimum exceeds the budget. Plain Levenshtein, not Damerau — so a transposition like <span class="mono">recieve</span> → <span class="mono">receive</span> costs <b>two</b> edits, and at a budget of one the trie hands you <span class="mono">relieve</span> instead.</p>
+      <p class="note" style="margin-top:10px;color:var(--c-18)">Query path only. The RocksDB write-behind and the multi-tenant engine need a server and are not demoed here — see the chapter repo.</p>
+    </div>
+  </div>
+</section>
+
 <!-- ============ FOOT ============ -->
 <footer class="wrap foot reveal">
   <h2 style="font-size:clamp(30px,5vw,52px)">Still on the bench</h2>
-  <p class="lede" style="font-size:18px;margin-top:14px">Twenty-two chapters left across both volumes. Key-value store is next off the pile.</p>
+  <p class="lede" style="font-size:18px;margin-top:14px">Twenty-one chapters left across both volumes. Key-value store is next off the pile.</p>
   <div class="roadmap">
     <span class="soon">1.6 Key-Value Store</span><span class="soon">1.9 Web Crawler</span><span class="soon">1.10 Notifications</span>
-    <span class="soon">1.11 News Feed</span><span class="soon">1.12 Chat</span><span class="soon">1.13 Autocomplete</span>
+    <span class="soon">1.11 News Feed</span><span class="soon">1.12 Chat</span>
     <span class="soon">1.14 YouTube</span><span class="soon">1.15 Google Drive</span><span class="soon">2.1 Proximity</span>
     <span class="soon">2.4 Message Queue</span><span class="soon">2.5 Metrics</span><span class="soon">2.6 Ad Click Agg</span>
     <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.9 S3 Storage</span><span class="soon">2.10 Leaderboard</span>
@@ -463,12 +503,28 @@ function runtime(){
   return goRuntime;
 }
 
+/* ── Rust wasm runtime (1.13), loaded lazily and separately from the Go one ──
+   Two binaries, not one: machine.wasm is a Go build and cannot absorb a Rust
+   cdylib. wasm-bindgen's --target web output is an ES module, so it comes in
+   through a dynamic import rather than a script tag. */
+var rsRuntime = null;
+function runtimeRs(){
+  if (rsRuntime) return rsRuntime;
+  rsRuntime = import("./static/machine_rs.js").then(function(mod){
+    return mod.default().then(function(){ return mod; });
+  }).catch(function(e){
+    throw new Error("static/machine_rs.js failed to load — run frontend/build.sh (" + e.message + ")");
+  });
+  return rsRuntime;
+}
+
 /* ── NOT CONNECTED state ──────────────────────────────────────────────────── */
 var QUIPS = {
   "#rate-limiter": "I can't say no yet — nobody built me.",
   "#hashing":      "No ring, no keys.",
   "#uid":          "Zero IDs. I'm not running.",
-  "#shortener":    "Nothing to squeeze — my Postgres is missing."
+  "#shortener":    "Nothing to squeeze — my Postgres is missing.",
+  "#autocomplete": "No words indexed. I've got nothing to suggest."
 };
 function offline(sel, err){
   var panel = $(sel), stage = $(".stage", panel);
@@ -501,7 +557,7 @@ var spy = new IntersectionObserver(function(es){
     if(e.isIntersecting) railLinks.forEach(function(a){ a.classList.toggle("on", a.getAttribute("href") === "#"+e.target.id); });
   });
 },{ threshold:.2, rootMargin:"-30% 0px -50% 0px" });
-["rate-limiter","hashing","uid","shortener"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
+["rate-limiter","hashing","uid","shortener","autocomplete"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
 
 /* Boot a panel the first time it comes near the viewport, so a visitor who
    never scrolls past the hero never downloads the wasm binary. */
@@ -1005,6 +1061,148 @@ onFirstView("#shortener", function(){
   sq.innerHTML='<span class="dim">↑ paste a monster of a URL and hit the button</span>';
   render();
 });
+
+/* ═══════════════ 1.13 SEARCH AUTOCOMPLETE ═══════════════════════════════════
+   Every suggestion is RadixTrie::prefix_search / fuzzy_search out of
+   autocomplete-rs, compiled to wasm. The corpus is 50,000 real English words
+   carrying their real Google web-corpus counts; see frontend/data/build-corpus.sh
+   for exactly how it was cut. Nothing here ranks, scores or matches — the trie
+   does all of it and this code draws the answer.
+   ────────────────────────────────────────────────────────────────────────── */
+onFirstView("#autocomplete", function(){
+  var panel = $("#autocomplete"), stage = $(".stage", panel);
+  var qEl = $("#ac-q"), hitsEl = $("#ac-hits"), modeEl = $("#ac-mode");
+  var usEl = $("#ac-us"), termsEl = $("#ac-terms"), nodesEl = $("#ac-nodes"),
+      bytesEl = $("#ac-bytes"), timingEl = $("#ac-timing");
+  var budget = 0, rs = null, greeted = false;
+  var MODES = ["exact prefix", "≤ 1 edit", "≤ 2 edits"];
+
+  function esc(t){ return String(t).replace(/[<>&]/g, function(c){
+    return c === "<" ? "&lt;" : c === ">" ? "&gt;" : "&amp;"; }); }
+  function commas(n){ return Number(n).toLocaleString("en-US"); }
+
+  hitsEl.innerHTML = '<span class="dim">loading 50,000 words…</span>';
+
+  /* performance.now() is deliberately coarse — browsers clamp it to somewhere
+     between 5µs and 100µs to blunt timing attacks. A single prefix_search can
+     finish in a few hundred nanoseconds, which reads as a flat 0. So: run it
+     once to get the order of magnitude, then repeat enough times that the
+     total clears the clamp by a wide margin, and report the mean. Slow calls
+     (fuzzy at budget 2 runs into milliseconds) are measured once and left
+     alone. Same reason cargo bench exists — one sample of a fast function is
+     not a measurement. */
+  function timed(fn){
+    var t0 = performance.now(); var out = fn(); var dt = performance.now() - t0;
+    if (dt > 2) return { out: out, us: dt * 1000, runs: 1 };
+    var runs = Math.max(20, Math.min(2000, Math.round(20 / Math.max(dt, 0.004))));
+    var t1 = performance.now();
+    for (var i = 0; i < runs; i++) fn();
+    var total = performance.now() - t1;
+    return { out: out, us: (total / runs) * 1000, runs: runs };
+  }
+
+  function fmtTime(us){
+    if (us >= 1000) return (us / 1000).toFixed(2) + " ms";
+    if (us >= 1) return us.toFixed(1) + " µs";
+    return Math.round(us * 1000) + " ns";
+  }
+
+  function render(rows, q){
+    if (!rows.length){
+      hitsEl.innerHTML = '<span class="dim">' +
+        (q ? 'nothing within reach — try a shorter prefix, or raise the edit budget'
+           : '↑ start typing') + '</span>';
+      return;
+    }
+    // Bar length is log-scaled: the top word outranks the 10th by orders of
+    // magnitude, so a linear bar would render every row after the first as a
+    // single invisible pixel.
+    var top = Math.log10(Math.max(rows[0].freq, 10));
+    hitsEl.innerHTML = rows.map(function(r, i){
+      var head = "", tail = esc(r.term);
+      if (budget === 0 && q && r.term.toLowerCase().indexOf(q) === 0){
+        head = '<b style="color:var(--chalk);border-bottom:1.5px solid var(--c-52)">' +
+               esc(r.term.slice(0, q.length)) + '</b>';
+        tail = esc(r.term.slice(q.length));
+      }
+      var w = Math.max(2, (Math.log10(Math.max(r.freq, 10)) / top) * 100);
+      var badge = (budget > 0)
+        ? '<span class="chip" style="margin-right:8px">d' + r.distance + '</span>' : '';
+      return '<div style="display:flex;align-items:center;gap:11px;font-family:JetBrains Mono,monospace;font-size:13px">' +
+        '<span style="color:var(--c-18);width:20px;text-align:right;flex:none">' + (i + 1) + '</span>' +
+        '<span style="flex:none;min-width:200px;color:var(--c-52)">' + badge + head + tail + '</span>' +
+        '<span style="flex:1;height:6px;min-width:30px;background:var(--c-18);border-radius:3px;overflow:hidden">' +
+          '<span style="display:block;height:100%;width:' + w.toFixed(1) + '%;background:var(--c-52)"></span>' +
+        '</span>' +
+        '<span style="flex:none;width:118px;text-align:right;color:var(--c-34)">' + commas(r.freq) + '</span>' +
+      '</div>';
+    }).join("");
+  }
+
+  function run(){
+    if (!rs) return;
+    var q = qEl.value.trim().toLowerCase();
+    modeEl.textContent = MODES[budget];
+    if (!q){ render([], ""); usEl.textContent = "—"; timingEl.innerHTML = "&nbsp;"; return; }
+    var r = timed(function(){
+      return budget === 0 ? rs.query(q, 10) : rs.fuzzy(q, budget, 10);
+    });
+    render(JSON.parse(r.out), q);
+    usEl.textContent = fmtTime(r.us);
+    timingEl.textContent = r.runs > 1
+      ? "mean of " + commas(r.runs) + " runs — one call is faster than performance.now() can resolve"
+      : "single run — slow enough to time directly";
+    if (!greeted && budget === 0 && q.length >= 3){
+      greeted = true;
+      bubble(stage, "Microseconds. Now go break the spelling.", { left: 22, top: 30, hold: 2400 });
+    }
+  }
+
+  function setBudget(b){
+    budget = b;
+    [0, 1, 2].forEach(function(i){
+      $("#ac-t" + i).setAttribute("aria-pressed", i === b ? "true" : "false");
+    });
+    run();
+  }
+  [0, 1, 2].forEach(function(i){
+    $("#ac-t" + i).addEventListener("click", function(){ setBudget(i); });
+  });
+
+  Promise.all([
+    runtimeRs(),
+    fetch("static/corpus.tsv").then(function(r){
+      if (!r.ok) throw new Error("static/corpus.tsv not found (HTTP " + r.status + ") — run frontend/data/build-corpus.sh");
+      return r.text();
+    })
+  ]).then(function(both){
+    rs = both[0];
+    // One crossing for the whole corpus. Calling insert() per line from here
+    // would mean 50,000 boundary crossings and a string conversion on each.
+    var t0 = performance.now();
+    var n = rs.load_corpus(both[1]);
+    var buildMs = performance.now() - t0;
+    var st = JSON.parse(rs.stats());
+    // Raw cost of the same words as a flat list, for the compression figure.
+    var rawBytes = 0;
+    both[1].split("\n").forEach(function(line){
+      var tab = line.indexOf("\t"); if (tab > 0) rawBytes += tab;
+    });
+    termsEl.textContent = commas(st.terms);
+    nodesEl.textContent = commas(st.nodes);
+    bytesEl.textContent = Math.round(st.bytes / 1024) + " KB";
+    render([], "");
+    // Nodes exceed terms — edge splits create internal branch nodes — so the
+    // compression is stated in bytes, which is where storing a shared prefix
+    // once actually shows up.
+    timingEl.textContent = commas(n) + " terms indexed in " + buildMs.toFixed(0) + " ms · " +
+      "edge labels hold " + Math.round(st.bytes / 1024) + " KB of " +
+      Math.round(rawBytes / 1024) + " KB of raw words — " +
+      (rawBytes / st.bytes).toFixed(1) + "× smaller, because a shared prefix is stored once";
+    qEl.addEventListener("input", function(){ try { run(); } catch(e){ guard("#autocomplete")(e); } });
+  }).catch(guard("#autocomplete"));
+});
+
 })();
 </script>
 

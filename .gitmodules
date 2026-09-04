@@ -16,3 +16,6 @@
 [submodule "1.8-URL-Shortener/url-shortener-go"]
 	path = 1.8-URL-Shortener/url-shortener-go
 	url = https://github.com/zeayush/url-shortener-go
+[submodule "1.13-Search-Autocomplete/autocomplete-rs"]
+	path = 1.13-Search-Autocomplete/autocomplete-rs
+	url = https://github.com/zeayush/autocomplete-rs

@@ -1,0 +1,3 @@
+# Cargo build output — 280MB of it. Cargo.lock is committed on purpose:
+# build.sh reads the wasm-bindgen version out of it to check the CLI matches.
+/target
