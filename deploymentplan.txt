@@ -1,0 +1,341 @@
+================================================================================
+DEPLOYMENT PLAN — system-design-from-scratch
+Machine Room frontend + url-shortener-go backend
+================================================================================
+
+Target cost:  ~$10-12/yr, all of it the domain. Everything else $0.
+Supersedes:   frontend/PHASE4-DEPLOY.md (stale — assumes a build step we do
+              not need, and a Redis dependency we do not need).
+
+
+--------------------------------------------------------------------------------
+0. GROUND RULES
+--------------------------------------------------------------------------------
+
+NOTHING RUNS ON YOUR LAPTOP.
+
+  Cloudflare Pages  serves the frontend        (static HTML + wasm)
+  Fly.io            runs the Go binary         (url-shortener-go)
+  Neon              holds the Postgres data    (2 shards)
+
+Once this is done your machine can be closed forever. It is only involved for
+`git push`. Nothing is ever served from localhost.
+
+Local tooling status (checked): gh, flyctl, docker, psql, node, npm and go are
+all MISSING. cargo is present. Consequences:
+
+  - You cannot rebuild the wasm locally (no Go). This does not matter:
+    frontend/static/*.wasm is already committed and pushed. It is exactly why
+    we can skip the Cloudflare build step entirely.
+  - You only need Go installed if you later change chapters 1.4 / 1.5 / 1.7
+    and want to regenerate machine.wasm via frontend/build.sh.
+  - Fly is the only phase needing a CLI install. Fly builds remotely, so you
+    do NOT need Docker.
+
+Git state (checked): main is in sync with origin/main. GitHub already has
+everything Cloudflare needs.
+
+
+--------------------------------------------------------------------------------
+1. WHY THIS IS CHEAP — THREE FINDINGS FROM THE CODE
+--------------------------------------------------------------------------------
+
+(1) NO BUILD STEP NEEDED.
+    frontend/static/ is already committed: machine.wasm, wasm_exec.js,
+    machine_rs_bg.wasm, machine_rs.js, corpus.tsv. Set the Pages build command
+    to EMPTY and the output directory to `frontend`. This removes the entire
+    Go + Rust + submodule build-environment problem, the GO_VERSION variable,
+    and the wasm-bindgen version-pinning hazard.
+
+(2) REDIS IS OPTIONAL — DROP IT.
+    cmd/server/main.go:47 only WARNS when Redis is unreachable. NewRedisStore
+    is constructed with the in-memory store as its fallback, and
+    rate-limiter-go/store/redis.go:101 routes every Redis error to it. On a
+    single instance, in-memory rate limiting is the correct choice anyway.
+
+(3) GEOIP IS OPTIONAL — DROP IT.
+    internal/geoip/geoip.go returns a no-op resolver when the .mmdb file is
+    missing. Skip the MaxMind account entirely.
+
+That leaves POSTGRES as the only hard dependency.
+internal/config/config.go:53 fails without DB_SHARD_0_DSN.
+
+
+--------------------------------------------------------------------------------
+2. WHY A CUSTOM DOMAIN IS FUNCTIONAL, NOT COSMETIC
+--------------------------------------------------------------------------------
+
+frontend/index.html:1052 renders j.short_url at 26px and computes a
+"% smaller" stat from its length. That string is built at
+internal/handler/links.go:111 from BASE_URL.
+
+On a raw hostname like url-shortener-zeayush.fly.dev the "shortened" URL is
+~44 characters, so the panel's headline number would be feeble or negative.
+A short domain is what makes the 1.8 demo land.
+
+PICK A SHORT DOMAIN. Every character is subtracted from that stat.
+
+
+--------------------------------------------------------------------------------
+3. COST BREAKDOWN
+--------------------------------------------------------------------------------
+
+  Domain at Cloudflare Registrar .................... ~$10-12/yr
+  Cloudflare DNS + SSL ..............................  $0
+  Cloudflare Pages hosting (unlimited bandwidth) ....  $0
+  Pages Functions (Workers free, 100k req/day) ......  $0
+  Fly.io, 1x shared-cpu-1x 256MB with auto-stop .....  $0
+  Fly custom hostname + Let's Encrypt cert ..........  $0
+  Neon Postgres free tier ...........................  $0
+  Redis (omitted) ...................................  $0
+  GeoIP (omitted) ...................................  $0
+  Email forwarding on the domain ....................  $0
+                                                      -----------
+  TOTAL                                               ~$10-12/yr
+
+Buy the domain at CLOUDFLARE REGISTRAR. It sells at wholesale with no markup,
+no first-year promo and no renewal jump — the cheapest SUSTAINED price.
+Namecheap/Porkbun beat it in year one ($1-3 promos) but renew at $12-20, so
+Cloudflare wins from year two onward. You need the domain on Cloudflare DNS
+for Pages anyway, so registering there removes a step.
+
+At cost, .com and .xyz land in the same band — take the .com.
+AVOID .io (~$40+/yr).
+
+If $10 is genuinely the blocker: the GitHub Student Developer Pack includes a
+free domain for a year, and is-a.dev gives a free-forever subdomain by PR.
+Both work with Pages. Neither is as short.
+
+NOTE: prices and free tiers drift. Verify at checkout rather than trusting
+this file. Render's free Postgres now expires after 30 days, which is why it
+is not used here.
+
+
+--------------------------------------------------------------------------------
+4. ARCHITECTURE — ONE DOMAIN, TWO HOSTNAMES
+--------------------------------------------------------------------------------
+
+  yourdomain.com     -> Cloudflare Pages   (the Machine Room)
+  s.yourdomain.com   -> Fly                (redirects + BASE_URL)
+
+The second hostname is REQUIRED, not optional. The shortener's redirect route
+is `GET /:code` at the root, which would collide with the static site if you
+tried to serve both from one hostname.
+
+Browser -> Pages (static wasm panels 1.4/1.5/1.7/1.13, all client-side)
+        -> Pages Function /api/* -> Fly -> Neon   (panel 1.8)
+        -> s.yourdomain.com/:code -> Fly -> Neon  (actual redirects)
+
+
+================================================================================
+PHASE A — FRONTEND LIVE                            ~10 min    $0
+================================================================================
+Do this first. It gets a working URL before you spend anything.
+
+[ ] A1. Create a free account at dash.cloudflare.com
+
+[ ] A2. Workers & Pages -> Create -> Pages -> Connect to Git.
+        Authorize GitHub, pick zeayush/system-design-from-scratch
+
+[ ] A3. On the build config screen set:
+          Framework preset:        None
+          Build command:           (LEAVE COMPLETELY EMPTY)
+                                   if it refuses to save, enter: echo skip
+          Build output directory:  frontend
+          Root directory:          (leave as-is)
+
+[ ] A4. Save and Deploy
+
+RESULT: <project>.pages.dev is live. Chapters 1.4, 1.5, 1.7 and 1.13 work
+immediately — they are wasm running in the visitor's browser. Only the 1.8
+panel says "not deployed". That is expected until Phase D.
+
+If the build log shows a submodule init warning, IGNORE IT. With no build
+command we only need frontend/, which lives in the main repo.
+
+
+================================================================================
+PHASE B — DOMAIN                                   ~10 min    ~$10-12/yr
+================================================================================
+
+[ ] B1. Cloudflare dashboard -> Domain Registration -> Register Domains.
+        Search for your name. KEEP IT SHORT (see section 2).
+
+[ ] B2. Buy it. It lands on Cloudflare nameservers automatically.
+        No DNS setup needed.
+
+[ ] B3. Pages project -> Custom domains -> Set up a domain -> enter your apex
+        (yourdomain.com). Cloudflare creates the record and issues the cert
+        itself. Apex works directly via CNAME flattening — no ALIAS needed.
+        Add www too if you want it.
+
+[ ] B4. (Free, optional) Enable DNSSEC (one click). Set up Email Routing to
+        forward hi@yourdomain.com to your Gmail.
+
+
+================================================================================
+PHASE C — DATABASE                                 ~10 min    $0
+================================================================================
+You have no psql, so use Neon's browser SQL editor.
+
+[ ] C1. Sign up at neon.tech (free tier, no card)
+
+[ ] C2. Create a project. PICK THE REGION CLOSEST TO WHERE YOU WILL PUT FLY.
+        Write it down — this matters for the latency numbers the demo shows.
+
+        My Neon region: ________________________
+
+[ ] C3. In that project create TWO databases:  shard0  and  shard1
+
+[ ] C4. Open the SQL Editor, select shard0, paste the ENTIRE contents of
+        1.8-URL-Shortener/url-shortener-go/migrations/001_init.sql and run it.
+
+[ ] C5. Switch to shard1 and run the EXACT SAME SQL again.
+        Both shards need identical schema.
+
+[ ] C6. Copy the POOLED connection string for each database. You now have two
+        DSNs. Keep them for Phase D.
+
+WHY TWO DATABASES: the consistent-hash routing in
+internal/repository/shard.go is then genuinely exercised — two independent
+connection pools, real ring lookups — while costing one free instance.
+DSN ORDER MUST REMAIN STABLE ACROSS DEPLOYS. The ring is seeded "shard-0",
+"shard-1" matching the slice index; reordering them remaps every key.
+
+
+================================================================================
+PHASE D — BACKEND                                  ~20 min    $0
+================================================================================
+
+*** BEFORE STARTING: tell Claude your chosen app name and Fly region. ***
+*** Fly needs a fly.toml with the right region, auto-stop settings and    ***
+*** port. Claude writes it. It saves fighting the `fly launch` wizard.    ***
+
+[ ] D1. Sign up at fly.io. A card is required even on the free allowance;
+        you will not be charged for one small machine.
+
+[ ] D2. Install the CLI (no root needed):
+
+            curl -L https://fly.io/install.sh | sh
+
+        Then add the printed path to your shell profile.
+
+[ ] D3. fly auth login          (opens a browser)
+
+[ ] D4. From inside 1.8-URL-Shortener/url-shortener-go:
+
+            fly launch --no-deploy
+
+        DECLINE when it offers to create a Postgres or Redis — you already
+        have Neon, and Redis is deliberately omitted (section 1).
+        Choose the region matching your Neon region from C2.
+
+[ ] D5. Set the config. SINGLE QUOTES MATTER — the DSNs contain characters
+        your shell will otherwise eat:
+
+            fly secrets set \
+              DB_SHARD_0_DSN='<neon shard0 dsn>' \
+              DB_SHARD_1_DSN='<neon shard1 dsn>' \
+              BASE_URL='https://s.yourdomain.com'
+
+[ ] D6. fly deploy
+        Fly builds remotely. You do NOT need Docker locally.
+
+[ ] D7. Check `fly logs`. You SHOULD see:
+            "redis unreachable — cache and distributed rate limiting disabled"
+            "geoip: database unavailable - country lookups disabled"
+        BOTH ARE EXPECTED AND CORRECT. The code degrades gracefully past them.
+
+[ ] D8. Confirm https://<app>.fly.dev/health responds.
+
+DO NOT ALLOCATE A DEDICATED IPv4. Fly bills ~$2/mo for one, which would double
+your annual cost. The CNAME in Phase E avoids needing any IP allocation.
+
+
+================================================================================
+PHASE E — CONNECT THEM                             ~10 min    $0
+================================================================================
+
+[ ] E1. fly certs add s.yourdomain.com
+
+[ ] E2. In Cloudflare DNS for your domain add a CNAME:
+            Name:    s
+            Target:  <app>.fly.dev
+            Proxy:   DNS ONLY  (GREY CLOUD, PROXY OFF)
+
+        Fly's certificate challenge FAILS behind Cloudflare's proxy. Leave it
+        grey permanently — a redirect endpoint gains nothing from proxying.
+
+[ ] E3. Wait for `fly certs show s.yourdomain.com` to report the cert issued
+        (usually under a minute).
+
+[ ] E4. Pages project -> Settings -> Environment variables, add:
+
+            SHORTENER_ORIGIN = https://<app>.fly.dev
+
+        Use the fly.dev hostname here, NOT your subdomain. That keeps the
+        origin-hiding property the proxy in
+        frontend/functions/api/[[path]].js is built around.
+
+[ ] E5. *** TELL CLAUDE WHEN E4 IS DONE. ***
+        Claude then:
+          - flips SHORTENER_API to "/api" at frontend/index.html:472
+          - adds the /health warm-up fetch that hides the cold start
+          - updates README.md with the live demo link
+        You push. Pages redeploys automatically. Panel 1.8 goes live.
+
+THE FLIP IS DELIBERATELY LAST. Setting SHORTENER_API earlier replaces the
+panel's clean "not deployed" message with connection errors.
+
+
+================================================================================
+5. WHAT TO EXPECT ONCE RUNNING
+================================================================================
+
+After ~5 minutes of no traffic Neon suspends and the Fly machine stops. The
+next visitor wakes both.
+
+KNOWN EDGE CASE: internal/repository/postgres.go:32 pings with a 5-second
+timeout and calls os.Exit(1) on failure. A cold container hitting a cold
+database can therefore crash once. Fly restarts it automatically and the retry
+succeeds against a now-awake Neon. The /health warm-up added in E5 fires this
+on page load, so a visitor never sees it.
+
+That is the price of $0 compute. If it ever annoys you, setting Fly's
+min_machines_running = 1 makes it disappear for ~$2/mo.
+
+DO NOT stack scale-to-zero on both tiers without the warm-up.
+
+
+================================================================================
+6. ONGOING MAINTENANCE
+================================================================================
+
+Frontend change      -> git push. Pages redeploys automatically.
+Backend change       -> fly deploy from the submodule directory.
+Chapter wasm change  -> requires Go installed locally; run frontend/build.sh
+                        and COMMIT the regenerated frontend/static/ artifacts.
+                        The Pages build command stays empty.
+Schema change        -> run the SQL against BOTH shard0 and shard1.
+
+Cloudflare Pages free tier: unlimited bandwidth, unlimited static requests.
+The 3.2 MB machine.wasm is lazy-loaded per panel, so the hero costs nothing.
+Pages Functions run on the Workers free tier at 100k requests/day.
+
+
+================================================================================
+7. STATUS
+================================================================================
+
+  [ ] Phase A — frontend on pages.dev
+  [ ] Phase B — domain registered and attached
+  [ ] Phase C — Neon project, 2 shards, schema applied
+  [ ] Phase D — fly.toml written by Claude, backend deployed
+  [ ] Phase E — proxy wired, SHORTENER_API flipped, README updated
+
+  My domain:      ________________________
+  My Fly app:     ________________________
+  My region:      ________________________
+  Pages URL:      ________________________
+
+================================================================================
