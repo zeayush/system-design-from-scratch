@@ -179,8 +179,30 @@ Do this first. It gets a working URL before you spend anything.
           Framework preset:        None
           Build command:           (LEAVE COMPLETELY EMPTY)
                                    if it refuses to save, enter: echo skip
-          Build output directory:  frontend
-          Root directory:          (leave as-is)
+          Root directory:          frontend        <- NOT blank
+          Build output directory:  /
+
+        *** ROOT DIRECTORY IS THE ONE THAT MATTERS. ***
+
+        Pages discovers functions/ at the PROJECT ROOT, meaning the "Root
+        directory" setting — not inside the build output directory. Getting
+        this wrong fails silently and convincingly: the static site deploys
+        and looks perfect, every wasm panel works, and only /api/* is
+        missing. Requests to it fall through to index.html with a 200, so
+        it does not even look like an error.
+
+        Got this wrong once already with root=blank, output=frontend: Pages
+        looked for /functions at the top of the repo, found none, and
+        shipped a purely static site.
+
+        Verify after deploy — a JSON 503 here is the CORRECT answer, it is
+        the function reporting the backend is not wired yet:
+
+            curl -s https://<project>.pages.dev/api/links/test
+
+        If that returns HTML instead, the function is not deployed. Fix the
+        root directory, then Deployments -> Retry deployment. A settings
+        change alone does not trigger a rebuild.
 
         Workers and Pages share a naming namespace. If a Worker of the same
         name exists, delete it first or the name collides:
@@ -368,11 +390,25 @@ PHASE F — CONNECT THEM                             ~15 min    $0
 
             https://dash.cloudflare.com/<account-id>/pages/new/provider/github
 
-            Project name:            machine-room-links
+            Project name:            <SHORT — see below>
             Repo:                    zeayush/system-design-from-scratch
             Framework preset:        None
             Build command:           (EMPTY)
-            Build output directory:  redirect
+            Root directory:          redirect        <- NOT blank
+            Build output directory:  /
+
+        Same root-directory rule as A3. This project is almost entirely
+        function, so getting it wrong leaves you with nothing but the
+        placeholder page.
+
+        PICK A SHORT PROJECT NAME. If you skip the custom domain, this
+        project's *.pages.dev hostname IS your short-link domain, and the
+        1.8 panel computes its "% smaller" stat from the result:
+
+            machine-room-links.pages.dev/Ab3x9Z  -> 50 chars  (weak)
+            sdlinks.pages.dev/Ab3x9Z             -> 32 chars
+            zy8.pages.dev/Ab3x9Z                 -> 28 chars  (as good as
+                                                    a paid domain's 26)
 
 [ ] F3. Project #2 -> Settings -> Environment variables:
 
