@@ -155,15 +155,36 @@ Do this first. It gets a working URL before you spend anything.
 
 [ ] A1. Create a free account at dash.cloudflare.com
 
-[ ] A2. Workers & Pages -> Create -> Pages -> Connect to Git.
-        Authorize GitHub, pick zeayush/system-design-from-scratch
+[ ] A2. *** YOU MUST CREATE A PAGES PROJECT, NOT A WORKER. ***
+
+        Cloudflare's "Connect to Git" flow now defaults to WORKERS. Taking
+        the default produces a Worker, whose build ignores functions/ and
+        deploys nothing. Hit this once already; the giveaway is a dashboard
+        URL containing /workers/services/view/ instead of /pages/.
+
+        functions/ is a PAGES-ONLY convention. Both function files in this
+        repo depend on it. A Worker would need a wrangler config and a
+        rewritten entry script.
+
+        Go straight to the Pages flow:
+
+            https://dash.cloudflare.com/<account-id>/pages/new/provider/github
+
+        Or click: Workers & Pages -> Create application -> the "Pages" TAB
+        -> Connect to Git. The Pages tab sits beside Workers and is easy to
+        miss. Then authorize GitHub and pick zeayush/system-design-from-scratch
 
 [ ] A3. Build config:
+          Project name:            machine-room
           Framework preset:        None
           Build command:           (LEAVE COMPLETELY EMPTY)
                                    if it refuses to save, enter: echo skip
           Build output directory:  frontend
           Root directory:          (leave as-is)
+
+        Workers and Pages share a naming namespace. If a Worker of the same
+        name exists, delete it first or the name collides:
+            <account> -> Workers -> <name> -> Settings -> bottom -> Delete
 
 [ ] A4. Save and Deploy
 
@@ -341,9 +362,13 @@ PHASE F — CONNECT THEM                             ~15 min    $0
         origin-hiding the proxy in frontend/functions/api/[[path]].js exists
         for. Redeploy the project so the variable takes effect.
 
-[ ] F2. Create Pages project #2 for redirects. Same repo, different output:
+[ ] F2. Create Pages project #2 for redirects. Same repo, different output.
 
-            Workers & Pages -> Create -> Pages -> Connect to Git
+        AGAIN: the Pages tab, not the Workers default. See A2.
+
+            https://dash.cloudflare.com/<account-id>/pages/new/provider/github
+
+            Project name:            machine-room-links
             Repo:                    zeayush/system-design-from-scratch
             Framework preset:        None
             Build command:           (EMPTY)
