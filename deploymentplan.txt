@@ -4,8 +4,9 @@ Machine Room frontend + url-shortener-go backend
 ================================================================================
 
 Target cost:  ~$10-12/yr, all of it the domain. Everything else $0.
-Supersedes:   frontend/PHASE4-DEPLOY.md (stale — assumes a build step we do
-              not need, and a Redis dependency we do not need).
+Region:       asia-south1 (Mumbai). Cloud Run Tier 1 pricing, closest to you.
+Revision:     rewritten after local verification. Supersedes the Fly.io plan
+              and frontend/PHASE4-DEPLOY.md.
 
 
 --------------------------------------------------------------------------------
@@ -14,117 +15,137 @@ Supersedes:   frontend/PHASE4-DEPLOY.md (stale — assumes a build step we do
 
 NOTHING RUNS ON YOUR LAPTOP.
 
-  Cloudflare Pages  serves the frontend        (static HTML + wasm)
-  Fly.io            runs the Go binary         (url-shortener-go)
-  Neon              holds the Postgres data    (2 shards)
+  Cloudflare Pages   serves the frontend         (static HTML + wasm)
+  Cloudflare Pages   serves the redirect edge    (second project, s.<domain>)
+  Google Cloud Run   runs the Go binary          (url-shortener-go)
+  Neon               holds the Postgres data     (2 shards)
+  Upstash            holds the Redis cache       (1 database)
 
-Once this is done your machine can be closed forever. It is only involved for
-`git push`. Nothing is ever served from localhost.
+Your machine is only involved for `git push` and the one `gcloud run deploy`.
 
-Local tooling status (checked): gh, flyctl, docker, psql, node, npm and go are
-all MISSING. cargo is present. Consequences:
+LOCAL TOOLING (re-checked, the previous plan's list was stale):
 
-  - You cannot rebuild the wasm locally (no Go). This does not matter:
-    frontend/static/*.wasm is already committed and pushed. It is exactly why
-    we can skip the Cloudflare build step entirely.
-  - You only need Go installed if you later change chapters 1.4 / 1.5 / 1.7
-    and want to regenerate machine.wasm via frontend/build.sh.
-  - Fly is the only phase needing a CLI install. Fly builds remotely, so you
-    do NOT need Docker.
+  present : go, docker, psql, node, npm, cargo, git, curl, colima
+  missing : gcloud   <- the only install needed
+  missing : gh, flyctl  <- not needed by this plan
 
-Git state (checked): main is in sync with origin/main. GitHub already has
-everything Cloudflare needs.
+  The Colima VM is not running, so `docker` cannot build locally. It does not
+  need to: Cloud Run builds the image remotely from source.
+
+GIT STATE: both repos on main, in sync with origin.
 
 
 --------------------------------------------------------------------------------
-1. WHY THIS IS CHEAP — THREE FINDINGS FROM THE CODE
+1. WHAT CHANGED IN THE CODE, AND WHY
 --------------------------------------------------------------------------------
 
-(1) NO BUILD STEP NEEDED.
-    frontend/static/ is already committed: machine.wasm, wasm_exec.js,
-    machine_rs_bg.wasm, machine_rs.js, corpus.tsv. Set the Pages build command
-    to EMPTY and the output directory to `frontend`. This removes the entire
-    Go + Rust + submodule build-environment problem, the GO_VERSION variable,
-    and the wasm-bindgen version-pinning hazard.
+Five issues were found and fixed before deploying (commit 6cdf58a in
+url-shortener-go). They are listed here because the deployment config
+depends on them.
 
-(2) REDIS IS OPTIONAL — DROP IT.
-    cmd/server/main.go:47 only WARNS when Redis is unreachable. NewRedisStore
-    is constructed with the in-memory store as its fallback, and
-    rate-limiter-go/store/redis.go:101 routes every Redis error to it. On a
-    single instance, in-memory rate limiting is the correct choice anyway.
+(1) REDIS ABSENT IS NOT THE SAME AS REDIS UNREACHABLE.
+    The old plan said "Redis is optional — drop it", reasoning that the code
+    degrades gracefully. It does, but not for free. With REDIS_ADDR left at
+    its localhost default, every request dialed a dead endpoint and waited
+    out the retries before falling back.
 
-(3) GEOIP IS OPTIONAL — DROP IT.
-    internal/geoip/geoip.go returns a no-op resolver when the .mmdb file is
-    missing. Skip the MaxMind account entirely.
+        measured: POST /api/links = 3.48s   (local Postgres, no Redis)
 
-That leaves POSTGRES as the only hard dependency.
-internal/config/config.go:53 fails without DB_SHARD_0_DSN.
+    The 1.8 panel renders that number as "ms round trip" on screen. It would
+    have read 3500 ms. An explicitly empty REDIS_ADDR now means "no Redis",
+    and the client is never constructed:
+
+        measured: POST /api/links = 1.4ms
+
+(2) REDIS TIMEOUTS ARE NOW BOUNDED.
+    go-redis defaults to 3 retries with backoff. Both the cache and the rate
+    limiter have correct in-process fallbacks, so a slow Redis is worse than
+    an absent one. Dial/read/write are capped and retries disabled, taking
+    the configured-but-down case from 3.48s to 0.82s.
+
+(3) REDIS_URL IS NOW SUPPORTED, AND IS HOW UPSTASH CONNECTS.
+    Upstash requires TLS. A "rediss://" scheme is the only thing that turns
+    TLS on, and the old code only accepted host+password. Paste Upstash's
+    URL into REDIS_URL and TLS is handled.
+
+(4) THE DSN NO LONGER LEAKS INTO LOGS.
+    repository.Open interpolated the raw DSN — password included — into both
+    of its error strings, and the ping error is exactly the one that fires on
+    a cold database. That would have landed in Cloud Logging in plaintext.
+    Errors now carry a redacted DSN, keeping the host for diagnosis.
+
+(5) THE COLD-START CRASH IS FIXED.
+    Open pinged once with a 5s timeout and main called os.Exit(1) on failure.
+    A suspended Neon takes longer than that to accept its first connection,
+    so the process died on the first request after idle. The ping now retries
+    with backoff inside a 30s budget. The /health warm-up is still worth
+    having, but it is no longer load-bearing.
+
+STILL TRUE FROM THE OLD PLAN:
+  - No build step. frontend/static/*.wasm is committed. Pages build command
+    stays EMPTY, output directory `frontend`.
+  - GeoIP is genuinely optional. internal/geoip returns a no-op resolver when
+    the .mmdb is missing. Skip MaxMind. Country shows as "" in analytics.
 
 
 --------------------------------------------------------------------------------
-2. WHY A CUSTOM DOMAIN IS FUNCTIONAL, NOT COSMETIC
+2. ARCHITECTURE — ONE DOMAIN, TWO HOSTNAMES, TWO PAGES PROJECTS
 --------------------------------------------------------------------------------
 
-frontend/index.html:1052 renders j.short_url at 26px and computes a
-"% smaller" stat from its length. That string is built at
-internal/handler/links.go:111 from BASE_URL.
+  <domain>.com      -> Pages project #1  (Machine Room, output dir `frontend`)
+  s.<domain>.com    -> Pages project #2  (redirect edge, output dir `redirect`)
 
-On a raw hostname like url-shortener-zeayush.fly.dev the "shortened" URL is
-~44 characters, so the panel's headline number would be feeble or negative.
-A short domain is what makes the 1.8 demo land.
+Two hostnames is REQUIRED, not cosmetic. The shortener's redirect route is
+`GET /:code` at the root. Sharing one hostname would make every unmatched
+path on the portfolio — a typo, a missing asset — look like a short code.
 
-PICK A SHORT DOMAIN. Every character is subtracted from that stat.
+Two PAGES PROJECTS (rather than a Worker, or DNS straight to Cloud Run):
+  - deploys by git push, like everything else; no wrangler, no extra CLI
+  - keeps the Cloud Run hostname out of DNS and out of the repo
+  - certificates are Cloudflare's problem, already solved
+  - both sit on the same free tier
+
+  Browser -> Pages #1                          (wasm panels 1.4/1.5/1.7/1.13)
+          -> Pages #1 /api/* -> Cloud Run      (panel 1.8)
+          -> Pages #2 /:code -> Cloud Run      (actual redirects)
+                                  |
+                                  +-> Neon     (2 shards)
+                                  +-> Upstash  (cache + distributed limiter)
 
 
 --------------------------------------------------------------------------------
-3. COST BREAKDOWN
+3. COST
 --------------------------------------------------------------------------------
 
   Domain at Cloudflare Registrar .................... ~$10-12/yr
   Cloudflare DNS + SSL ..............................  $0
-  Cloudflare Pages hosting (unlimited bandwidth) ....  $0
+  Cloudflare Pages x2 (unlimited bandwidth) .........  $0
   Pages Functions (Workers free, 100k req/day) ......  $0
-  Fly.io, 1x shared-cpu-1x 256MB with auto-stop .....  $0
-  Fly custom hostname + Let's Encrypt cert ..........  $0
+  Cloud Run (2M req/mo free, scales to zero) ........  $0
+  Cloud Build + Artifact Registry (free tier) .......  $0
   Neon Postgres free tier ...........................  $0
-  Redis (omitted) ...................................  $0
+  Upstash Redis free tier ...........................  $0
   GeoIP (omitted) ...................................  $0
-  Email forwarding on the domain ....................  $0
                                                       -----------
   TOTAL                                               ~$10-12/yr
 
-Buy the domain at CLOUDFLARE REGISTRAR. It sells at wholesale with no markup,
-no first-year promo and no renewal jump — the cheapest SUSTAINED price.
-Namecheap/Porkbun beat it in year one ($1-3 promos) but renew at $12-20, so
-Cloudflare wins from year two onward. You need the domain on Cloudflare DNS
-for Pages anyway, so registering there removes a step.
+WHY CLOUD RUN AND NOT FLY: Fly ended free resource allowances for new
+organisations. A shared-cpu-1x would be ~$1.94/mo, roughly doubling the
+annual cost. Cloud Run's free tier is documented and per-month, and this
+service's Dockerfile already fits it: static CGO-free binary, non-root,
+listening on 8080, which is the port Cloud Run injects.
 
-At cost, .com and .xyz land in the same band — take the .com.
-AVOID .io (~$40+/yr).
+WHY ASIA-SOUTH1: at this traffic every region is $0. What varies is the
+overflow rate if you ever exceed free tier — Tier 1 regions bill ~20% under
+Tier 2, and asia-south1 is Tier 1 and closest to you.
 
-If $10 is genuinely the blocker: the GitHub Student Developer Pack includes a
-free domain for a year, and is-a.dev gives a free-forever subdomain by PR.
-Both work with Pages. Neither is as short.
+Buy the domain at CLOUDFLARE REGISTRAR: wholesale, no first-year promo, no
+renewal jump. Namecheap/Porkbun win year one and lose from year two.
+At cost, .com and .xyz land in the same band — take the .com. Avoid .io.
 
-NOTE: prices and free tiers drift. Verify at checkout rather than trusting
-this file. Render's free Postgres now expires after 30 days, which is why it
-is not used here.
-
-
---------------------------------------------------------------------------------
-4. ARCHITECTURE — ONE DOMAIN, TWO HOSTNAMES
---------------------------------------------------------------------------------
-
-  yourdomain.com     -> Cloudflare Pages   (the Machine Room)
-  s.yourdomain.com   -> Fly                (redirects + BASE_URL)
-
-The second hostname is REQUIRED, not optional. The shortener's redirect route
-is `GET /:code` at the root, which would collide with the static site if you
-tried to serve both from one hostname.
-
-Browser -> Pages (static wasm panels 1.4/1.5/1.7/1.13, all client-side)
-        -> Pages Function /api/* -> Fly -> Neon   (panel 1.8)
-        -> s.yourdomain.com/:code -> Fly -> Neon  (actual redirects)
+PRICES AND FREE TIERS DRIFT. Verify at checkout rather than trusting this
+file. Render's free Postgres now expires after 30 days, which is why Neon
+is used instead.
 
 
 ================================================================================
@@ -137,7 +158,7 @@ Do this first. It gets a working URL before you spend anything.
 [ ] A2. Workers & Pages -> Create -> Pages -> Connect to Git.
         Authorize GitHub, pick zeayush/system-design-from-scratch
 
-[ ] A3. On the build config screen set:
+[ ] A3. Build config:
           Framework preset:        None
           Build command:           (LEAVE COMPLETELY EMPTY)
                                    if it refuses to save, enter: echo skip
@@ -146,12 +167,12 @@ Do this first. It gets a working URL before you spend anything.
 
 [ ] A4. Save and Deploy
 
-RESULT: <project>.pages.dev is live. Chapters 1.4, 1.5, 1.7 and 1.13 work
-immediately — they are wasm running in the visitor's browser. Only the 1.8
-panel says "not deployed". That is expected until Phase D.
+RESULT: <project>.pages.dev is live. Panels 1.4, 1.5, 1.7 and 1.13 work
+immediately — they are wasm in the visitor's browser. Panel 1.8 says
+"not deployed" until Phase F. That is correct and deliberate.
 
-If the build log shows a submodule init warning, IGNORE IT. With no build
-command we only need frontend/, which lives in the main repo.
+Ignore any submodule warning in the build log. With no build command only
+frontend/ matters, and that lives in the main repo.
 
 
 ================================================================================
@@ -159,183 +180,264 @@ PHASE B — DOMAIN                                   ~10 min    ~$10-12/yr
 ================================================================================
 
 [ ] B1. Cloudflare dashboard -> Domain Registration -> Register Domains.
-        Search for your name. KEEP IT SHORT (see section 2).
+        KEEP IT SHORT. Every character is subtracted from the "% smaller"
+        stat the 1.8 panel computes from the returned short_url.
 
 [ ] B2. Buy it. It lands on Cloudflare nameservers automatically.
-        No DNS setup needed.
 
-[ ] B3. Pages project -> Custom domains -> Set up a domain -> enter your apex
-        (yourdomain.com). Cloudflare creates the record and issues the cert
-        itself. Apex works directly via CNAME flattening — no ALIAS needed.
-        Add www too if you want it.
+[ ] B3. Pages project #1 -> Custom domains -> add your apex (<domain>.com).
+        Apex works directly via CNAME flattening. Add www if you want it.
 
-[ ] B4. (Free, optional) Enable DNSSEC (one click). Set up Email Routing to
-        forward hi@yourdomain.com to your Gmail.
+[ ] B4. (Free, optional) Enable DNSSEC. Set up Email Routing to forward
+        hi@<domain> to your Gmail.
+
+        My domain: ________________________
 
 
 ================================================================================
 PHASE C — DATABASE                                 ~10 min    $0
 ================================================================================
-You have no psql, so use Neon's browser SQL editor.
+You have psql, so the browser SQL editor is optional.
 
 [ ] C1. Sign up at neon.tech (free tier, no card)
 
-[ ] C2. Create a project. PICK THE REGION CLOSEST TO WHERE YOU WILL PUT FLY.
-        Write it down — this matters for the latency numbers the demo shows.
+[ ] C2. Create a project. Pick Mumbai (ap-south-1) if offered, else the
+        closest region shown — Singapore is the likely fallback.
 
         My Neon region: ________________________
 
 [ ] C3. In that project create TWO databases:  shard0  and  shard1
 
-[ ] C4. Open the SQL Editor, select shard0, paste the ENTIRE contents of
-        1.8-URL-Shortener/url-shortener-go/migrations/001_init.sql and run it.
+[ ] C4. Copy the POOLED connection string for each. Two DSNs.
 
-[ ] C5. Switch to shard1 and run the EXACT SAME SQL again.
-        Both shards need identical schema.
+[ ] C5. Apply the schema to BOTH, from this repo:
 
-[ ] C6. Copy the POOLED connection string for each database. You now have two
-        DSNs. Keep them for Phase D.
+            cd 1.8-URL-Shortener/url-shortener-go
+            psql '<shard0 dsn>' -v ON_ERROR_STOP=1 -f migrations/001_init.sql
+            psql '<shard1 dsn>' -v ON_ERROR_STOP=1 -f migrations/001_init.sql
 
-WHY TWO DATABASES: the consistent-hash routing in
-internal/repository/shard.go is then genuinely exercised — two independent
-connection pools, real ring lookups — while costing one free instance.
+        Verify each shows tables `links` and `clicks`:
+
+            psql '<shard0 dsn>' -c '\dt'
+
+WHY TWO DATABASES: the consistent-hash routing in internal/repository/shard.go
+is then genuinely exercised — two pools, real ring lookups — for one free
+instance. Verified locally: 12 links split 10/8 across the two shards.
+
 DSN ORDER MUST REMAIN STABLE ACROSS DEPLOYS. The ring is seeded "shard-0",
-"shard-1" matching the slice index; reordering them remaps every key.
+"shard-1" matching the slice index. Reordering them remaps every key and
+every existing short link breaks.
 
 
 ================================================================================
-PHASE D — BACKEND                                  ~20 min    $0
+PHASE D — CACHE                                    ~5 min     $0
 ================================================================================
 
-*** BEFORE STARTING: tell Claude your chosen app name and Fly region. ***
-*** Fly needs a fly.toml with the right region, auto-stop settings and    ***
-*** port. Claude writes it. It saves fighting the `fly launch` wizard.    ***
+[ ] D1. Sign up at upstash.com (free tier, no card)
 
-[ ] D1. Sign up at fly.io. A card is required even on the free allowance;
-        you will not be charged for one small machine.
+[ ] D2. Create a Redis database. Region: Mumbai (ap-south-1) if offered,
+        otherwise match your Neon region.
 
-[ ] D2. Install the CLI (no root needed):
+[ ] D3. Copy the connection string in "rediss://" form (Upstash labels it
+        the Redis URL / TLS endpoint). It must start `rediss://`, not
+        `redis://` — the extra s is what turns TLS on, and Upstash refuses
+        plaintext.
 
-            curl -L https://fly.io/install.sh | sh
+        Keep it for Phase E.
 
-        Then add the printed path to your shell profile.
-
-[ ] D3. fly auth login          (opens a browser)
-
-[ ] D4. From inside 1.8-URL-Shortener/url-shortener-go:
-
-            fly launch --no-deploy
-
-        DECLINE when it offers to create a Postgres or Redis — you already
-        have Neon, and Redis is deliberately omitted (section 1).
-        Choose the region matching your Neon region from C2.
-
-[ ] D5. Set the config. SINGLE QUOTES MATTER — the DSNs contain characters
-        your shell will otherwise eat:
-
-            fly secrets set \
-              DB_SHARD_0_DSN='<neon shard0 dsn>' \
-              DB_SHARD_1_DSN='<neon shard1 dsn>' \
-              BASE_URL='https://s.yourdomain.com'
-
-[ ] D6. fly deploy
-        Fly builds remotely. You do NOT need Docker locally.
-
-[ ] D7. Check `fly logs`. You SHOULD see:
-            "redis unreachable — cache and distributed rate limiting disabled"
-            "geoip: database unavailable - country lookups disabled"
-        BOTH ARE EXPECTED AND CORRECT. The code degrades gracefully past them.
-
-[ ] D8. Confirm https://<app>.fly.dev/health responds.
-
-DO NOT ALLOCATE A DEDICATED IPv4. Fly bills ~$2/mo for one, which would double
-your annual cost. The CNAME in Phase E avoids needing any IP allocation.
+Free-tier command limits apply. A portfolio demo will not approach them, but
+check the current number at signup.
 
 
 ================================================================================
-PHASE E — CONNECT THEM                             ~10 min    $0
+PHASE E — BACKEND                                  ~20 min    $0
 ================================================================================
 
-[ ] E1. fly certs add s.yourdomain.com
+[ ] E1. Install the gcloud CLI (no root needed):
 
-[ ] E2. In Cloudflare DNS for your domain add a CNAME:
-            Name:    s
-            Target:  <app>.fly.dev
-            Proxy:   DNS ONLY  (GREY CLOUD, PROXY OFF)
+            curl https://sdk.cloud.google.com | bash
+            exec -l $SHELL
+            gcloud init
 
-        Fly's certificate challenge FAILS behind Cloudflare's proxy. Leave it
-        grey permanently — a redirect endpoint gains nothing from proxying.
+[ ] E2. Create a project and enable billing. A card is required even on the
+        always-free tier. You will not be charged at this scale, but set a
+        budget alert anyway:  Billing -> Budgets & alerts -> $1.
 
-[ ] E3. Wait for `fly certs show s.yourdomain.com` to report the cert issued
-        (usually under a minute).
+[ ] E3. Enable the APIs:
 
-[ ] E4. Pages project -> Settings -> Environment variables, add:
+            gcloud services enable run.googleapis.com \
+              cloudbuild.googleapis.com artifactregistry.googleapis.com
 
-            SHORTENER_ORIGIN = https://<app>.fly.dev
+[ ] E4. Deploy from the submodule directory. Cloud Run builds remotely, so
+        Colima does NOT need to be running.
 
-        Use the fly.dev hostname here, NOT your subdomain. That keeps the
-        origin-hiding property the proxy in
-        frontend/functions/api/[[path]].js is built around.
+            cd 1.8-URL-Shortener/url-shortener-go
 
-[ ] E5. *** TELL CLAUDE WHEN E4 IS DONE. ***
-        Claude then:
-          - flips SHORTENER_API to "/api" at frontend/index.html:472
+            gcloud run deploy url-shortener \
+              --source . \
+              --region asia-south1 \
+              --allow-unauthenticated \
+              --memory 512Mi \
+              --cpu 1 \
+              --min-instances 0 \
+              --max-instances 3 \
+              --set-env-vars "BASE_URL=https://s.<domain>.com" \
+              --set-env-vars "DB_SHARD_0_DSN=<shard0 dsn>" \
+              --set-env-vars "DB_SHARD_1_DSN=<shard1 dsn>" \
+              --set-env-vars "REDIS_URL=<rediss:// url>"
+
+        --max-instances 3 IS THE COST GUARD. Without a ceiling, a traffic
+        spike or a crawler loop can scale out and generate a real bill.
+        --min-instances 0 is what keeps it free when idle.
+
+        If a DSN contains a comma, --set-env-vars will mis-split it. Use
+        --set-env-vars "^@^KEY=value" to change the delimiter, or move the
+        secrets to Secret Manager (below).
+
+[ ] E5. Confirm it came up:
+
+            gcloud run services describe url-shortener \
+              --region asia-south1 --format='value(status.url)'
+
+            curl -s <that url>/health
+
+        Expected: {"redis":"ok"}
+        If it says the cache is disabled, REDIS_URL did not take.
+
+[ ] E6. Check the logs for a clean start:
+
+            gcloud run services logs read url-shortener --region asia-south1 --limit 20
+
+        You SHOULD still see the geoip line — that one is expected:
+            "geoip: database unavailable – country lookups disabled"
+        You should NOT see a redis warning, and no DSN should be visible
+        anywhere in the output.
+
+        My Cloud Run URL: ________________________
+
+OPTIONAL HARDENING — Secret Manager instead of plain env vars. Env vars are
+readable by anyone with console access to the project. Free tier covers 6
+active versions:
+
+    printf '%s' '<shard0 dsn>' | gcloud secrets create db-shard-0 --data-file=-
+    printf '%s' '<shard1 dsn>' | gcloud secrets create db-shard-1 --data-file=-
+    printf '%s' '<rediss url>' | gcloud secrets create redis-url  --data-file=-
+
+    gcloud run services update url-shortener --region asia-south1 \
+      --set-secrets "DB_SHARD_0_DSN=db-shard-0:latest" \
+      --set-secrets "DB_SHARD_1_DSN=db-shard-1:latest" \
+      --set-secrets "REDIS_URL=redis-url:latest"
+
+
+================================================================================
+PHASE F — CONNECT THEM                             ~15 min    $0
+================================================================================
+
+[ ] F1. Pages project #1 -> Settings -> Environment variables:
+
+            SHORTENER_ORIGIN = <your Cloud Run URL>
+
+        Use the .run.app hostname, not your subdomain. That preserves the
+        origin-hiding the proxy in frontend/functions/api/[[path]].js exists
+        for. Redeploy the project so the variable takes effect.
+
+[ ] F2. Create Pages project #2 for redirects. Same repo, different output:
+
+            Workers & Pages -> Create -> Pages -> Connect to Git
+            Repo:                    zeayush/system-design-from-scratch
+            Framework preset:        None
+            Build command:           (EMPTY)
+            Build output directory:  redirect
+
+[ ] F3. Project #2 -> Settings -> Environment variables:
+
+            SHORTENER_ORIGIN = <your Cloud Run URL>
+            PORTFOLIO_URL    = https://<domain>.com
+
+        PORTFOLIO_URL is where a visitor to the bare s.<domain> is sent.
+
+[ ] F4. Project #2 -> Custom domains -> add  s.<domain>.com
+        Leave it proxied (orange cloud). Unlike the Fly plan, there is no
+        certificate challenge to break — Cloudflare terminates TLS itself.
+
+[ ] F5. Smoke test end to end:
+
+            curl -s -X POST https://<domain>.com/api/links \
+              -H 'content-type: application/json' \
+              -d '{"url":"https://example.com/some/long/path"}'
+
+        Note the field is "url", NOT "long_url".
+        Then follow the returned short_url:
+
+            curl -sI https://s.<domain>.com/<code>
+
+        Expect 302 and a Location header pointing at the original URL.
+
+[ ] F6. TELL CLAUDE WHEN F1-F5 PASS. Claude then:
+          - flips SHORTENER_API from null to "/api" at frontend/index.html:472
           - adds the /health warm-up fetch that hides the cold start
           - updates README.md with the live demo link
-        You push. Pages redeploys automatically. Panel 1.8 goes live.
+        You push. Pages redeploys. Panel 1.8 goes live.
 
 THE FLIP IS DELIBERATELY LAST. Setting SHORTENER_API earlier replaces the
 panel's clean "not deployed" message with connection errors.
 
 
 ================================================================================
-5. WHAT TO EXPECT ONCE RUNNING
+4. WHAT TO EXPECT ONCE RUNNING
 ================================================================================
 
-After ~5 minutes of no traffic Neon suspends and the Fly machine stops. The
-next visitor wakes both.
+After a few minutes of no traffic Neon suspends and Cloud Run scales to zero.
+The next visitor wakes both. The first request after idle pays a cold start:
+the container starts in ~1-2s, and the ping retry added in fix (5) absorbs
+Neon's wake without crashing. The /health warm-up in F6 fires this on page
+load so a visitor rarely sees it.
 
-KNOWN EDGE CASE: internal/repository/postgres.go:32 pings with a 5-second
-timeout and calls os.Exit(1) on failure. A cold container hitting a cold
-database can therefore crash once. Fly restarts it automatically and the retry
-succeeds against a now-awake Neon. The /health warm-up added in E5 fires this
-on page load, so a visitor never sees it.
+Upstash does not suspend, so cache hits stay fast across idle periods.
 
-That is the price of $0 compute. If it ever annoys you, setting Fly's
-min_machines_running = 1 makes it disappear for ~$2/mo.
+If the cold start ever annoys you, --min-instances 1 removes it, but that
+bills continuously and is no longer free. Do not set it casually.
 
-DO NOT stack scale-to-zero on both tiers without the warm-up.
+KNOWN BEHAVIOUR: analytics are buffered in memory (ANALYTICS_BUFFER_SIZE,
+default 2048) and flushed by a background goroutine. A scale-to-zero
+shutdown can drop whatever has not flushed. Cosmetic for a demo.
 
 
 ================================================================================
-6. ONGOING MAINTENANCE
+5. ONGOING MAINTENANCE
 ================================================================================
 
-Frontend change      -> git push. Pages redeploys automatically.
-Backend change       -> fly deploy from the submodule directory.
-Chapter wasm change  -> requires Go installed locally; run frontend/build.sh
-                        and COMMIT the regenerated frontend/static/ artifacts.
+Frontend change      -> git push. Pages project #1 redeploys automatically.
+Redirect edge change -> git push. Pages project #2 redeploys automatically.
+Backend change       -> gcloud run deploy --source . from the submodule dir.
+                        Remember to commit and push the submodule too, and
+                        then the parent's updated pointer.
+Chapter wasm change  -> go is installed now, so frontend/build.sh works.
+                        COMMIT the regenerated frontend/static/ artifacts.
                         The Pages build command stays empty.
-Schema change        -> run the SQL against BOTH shard0 and shard1.
+Schema change        -> run the SQL against BOTH shards.
 
-Cloudflare Pages free tier: unlimited bandwidth, unlimited static requests.
-The 3.2 MB machine.wasm is lazy-loaded per panel, so the hero costs nothing.
-Pages Functions run on the Workers free tier at 100k requests/day.
+Cloudflare Pages free tier: unlimited bandwidth and static requests. The
+3.2 MB machine.wasm is lazy-loaded per panel, so the hero costs nothing.
+Pages Functions run on the Workers free tier at 100k requests/day, shared
+across both projects.
 
 
 ================================================================================
-7. STATUS
+6. STATUS
 ================================================================================
 
   [ ] Phase A — frontend on pages.dev
   [ ] Phase B — domain registered and attached
-  [ ] Phase C — Neon project, 2 shards, schema applied
-  [ ] Phase D — fly.toml written by Claude, backend deployed
-  [ ] Phase E — proxy wired, SHORTENER_API flipped, README updated
+  [ ] Phase C — Neon project, 2 shards, schema applied to both
+  [ ] Phase D — Upstash Redis, rediss:// URL in hand
+  [ ] Phase E — gcloud installed, Cloud Run deployed, /health green
+  [ ] Phase F — both Pages projects wired, SHORTENER_API flipped
 
-  My domain:      ________________________
-  My Fly app:     ________________________
-  My region:      ________________________
-  Pages URL:      ________________________
+  My domain:        ________________________
+  My Neon region:   ________________________
+  My Cloud Run URL: ________________________
+  Pages #1 URL:     ________________________
+  Pages #2 URL:     ________________________
 
 ================================================================================
