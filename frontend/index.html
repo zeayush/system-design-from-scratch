@@ -468,8 +468,27 @@ a.link:hover{text-decoration-color:var(--chalk)}
 var $ = function(s,r){ return (r||document).querySelector(s); };
 var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/* ── 1.8 backend. Left null until the service is deployed; see readme.txt. ── */
-var SHORTENER_API = null;   // "/api" once the Pages Function proxy is live
+/* ── 1.8 backend. Served same-origin by functions/api/[[path]].js, which
+      forwards to url-shortener-go on Cloud Run. Set to null to put the panel
+      back into its "not deployed" state. ────────────────────────────────── */
+var SHORTENER_API = "/api";
+
+/* The service scales to zero, so the first request after an idle period pays
+   a container start plus a serverless-Postgres wake. Firing a cheap request
+   when the panel scrolls into view moves that cost off the visitor's first
+   interaction.
+
+   A lookup rather than /health, for two reasons: the proxy only forwards
+   /api/*, while the backend's /health sits at its root and is unreachable
+   from here; and a lookup also wakes the database, which /health would not
+   touch. The 404 it returns is the point — nothing is created.
+
+   Failure is ignored. This is a warm-up, not a dependency. */
+function warmShortener(){
+  if(!SHORTENER_API) return;
+  try { fetch(SHORTENER_API+"/links/_warmup").catch(function(){}); }
+  catch(e){}
+}
 
 /* ── Go wasm runtime, loaded lazily on first use ──────────────────────────── */
 var goRuntime = null;
@@ -988,6 +1007,7 @@ onFirstView("#uid", function(){
    cross-origin request and url-shortener-go needs no CORS middleware added.
    ========================================================================== */
 onFirstView("#shortener", function(){
+  warmShortener();
   var urlEl=$("#us-url"), goBtn=$("#us-go"), sq=$("#us-squeeze"), pipe=$("#us-pipeline"),
       rows=$("#us-rows"), stage=$("#us-stage");
   var links=[], busy=false;
@@ -1046,13 +1066,12 @@ onFirstView("#shortener", function(){
       step('shortcode.Random() → <span style="color:var(--chalk)">'+j.short_code+'</span> <span style="color:var(--c-34)">(6 chars, crypto/rand, 62⁶ = 56.8 billion)</span>', 300);
       step('consistent-hash ring → shard for "'+j.short_code+'"', 560);
       step('INSERT + cache warm <span style="color:var(--c-34)">'+ms+' ms round trip</span>', 820);
-      var from=raw.length, to=j.short_url.length;
       sq.innerHTML='<span style="font-size:26px;font-family:JetBrains Mono,monospace;font-weight:700;color:var(--chalk)">'+j.short_url+'</span>'+
-        '<span class="note" style="margin-left:14px">'+from+' → '+to+' chars · '+Math.round((1-to/from)*100)+'% smaller</span>';
+        '<span class="note" style="margin-left:14px">'+j.short_code+' · routed by consistent hash</span>';
       links.unshift({ short_code:j.short_code, short_url:j.short_url, shard:null, clicks:0, last:null });
       if(links.length>6) links.pop();
       render();
-      bubble(stage,"Squeezed. "+Math.round((1-to/from)*100)+"% gone.",{left:20,top:34,hold:1700});
+      bubble(stage,"Six characters. 62\u2076 of them to choose from.",{left:20,top:34,hold:1700});
       busy=false; goBtn.disabled=false;
     }).catch(function(e){ busy=false; goBtn.disabled=false; guard("#shortener")(e); });
   }
