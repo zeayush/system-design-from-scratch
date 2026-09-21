@@ -281,12 +281,34 @@ PHASE D — CACHE                                    ~5 min     $0
 [ ] D2. Create a Redis database. Region: Mumbai (ap-south-1) if offered,
         otherwise match your Neon region.
 
-[ ] D3. Copy the connection string in "rediss://" form (Upstash labels it
-        the Redis URL / TLS endpoint). It must start `rediss://`, not
-        `redis://` — the extra s is what turns TLS on, and Upstash refuses
-        plaintext.
+[ ] D3. Copy the connection string and convert it to "rediss://" form.
 
-        Keep it for Phase E.
+        *** UPSTASH HANDS YOU THE WRONG FORM BY DEFAULT. ***
+
+        The console shows a redis-cli snippet like:
+
+            redis-cli --tls -u redis://default:<pw>@<host>.upstash.io:6379
+                       ^^^^^          ^^^^^^^^
+                       TLS as a FLAG  scheme says PLAINTEXT
+
+        redis-cli takes TLS from the --tls flag. Go cannot: redis.ParseURL
+        derives TLS from the SCHEME ALONE. Hand it redis:// and it connects
+        in plaintext, Upstash rejects it, and the cache silently falls back
+        to disabled — the service still works, just with no cache and no
+        obvious error.
+
+        Strip "redis-cli --tls -u " and add the second s:
+
+            rediss://default:<pw>@<host>.upstash.io:6379
+
+        Verified working: TLS negotiated, PING + SET/GET round trip, 37-41ms
+        steady state from Delhi. First connection costs ~420ms for the TLS
+        handshake; that is the pool warming, not the steady state.
+
+[ ] D4. CHECK WHICH REGION IT LANDED IN. A cache is only worth having if it
+        is closer than the database it fronts. If Neon is in Mumbai and
+        Upstash is in Singapore, the cache is slower than the thing it
+        caches and is worth turning off. Aim to put both in the same place.
 
 Free-tier command limits apply. A portfolio demo will not approach them, but
 check the current number at signup.
