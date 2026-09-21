@@ -4,7 +4,7 @@ Machine Room frontend + url-shortener-go backend
 ================================================================================
 
 Target cost:  ~$10-12/yr, all of it the domain. Everything else $0.
-Region:       asia-south1 (Mumbai). Cloud Run Tier 1 pricing, closest to you.
+Region:       asia-southeast1 (Singapore). See below — NOT Mumbai.
 Revision:     rewritten after local verification. Supersedes the Fly.io plan
               and frontend/PHASE4-DEPLOY.md.
 
@@ -135,9 +135,23 @@ annual cost. Cloud Run's free tier is documented and per-month, and this
 service's Dockerfile already fits it: static CGO-free binary, non-root,
 listening on 8080, which is the port Cloud Run injects.
 
-WHY ASIA-SOUTH1: at this traffic every region is $0. What varies is the
-overflow rate if you ever exceed free tier — Tier 1 regions bill ~20% under
-Tier 2, and asia-south1 is Tier 1 and closest to you.
+WHY ASIA-SOUTHEAST1 AND NOT MUMBAI: Neon offers no Indian region — its
+nearest is ap-southeast-1, Singapore. The database therefore cannot move,
+so the compute has to follow it. Measured from Delhi: Neon Singapore
+86-93ms, which becomes ~3ms once Cloud Run sits beside it.
+
+Deploying to Mumbai instead would put every write across the bay twice —
+the collision check and the insert — roughly 120-180ms per shortened link,
+and that is precisely the number the 1.8 panel prints on screen.
+
+The cache must follow the same logic. Upstash defaulted to a Mumbai region
+here, ~55ms from Singapore, which would have made a cache read slower than
+the database read it replaces. Co-locate it or switch it off; a cache
+farther away than its database is worse than no cache.
+
+Cost note: asia-southeast1 is Cloud Run Tier 2, ~20% above Tier 1 on
+overflow. At free-tier volume that is $0 either way, and correctness of
+placement beats a rate that never applies.
 
 Buy the domain at CLOUDFLARE REGISTRAR: wholesale, no first-year promo, no
 renewal jump. Namecheap/Porkbun win year one and lose from year two.
@@ -333,6 +347,36 @@ PHASE E — BACKEND                                  ~20 min    $0
             gcloud services enable run.googleapis.com \
               cloudbuild.googleapis.com artifactregistry.googleapis.com
 
+[ ] E3b. GRANT THE DEFAULT COMPUTE SA ITS BUILD ROLE. Do this BEFORE the
+         first deploy or that deploy fails.
+
+         Since Google's 2024 service-account change, a new project's default
+         compute service account no longer receives build permissions. The
+         first `gcloud run deploy --source` uploads the source, then dies:
+
+             PERMISSION_DENIED: Build failed because the default service
+             account is missing required IAM permissions ...
+             IAM permission denied for service account
+             <project-number>-compute@developer.gserviceaccount.com
+
+         Nothing is wrong with the code — it never gets built. One grant:
+
+             PROJ=$(gcloud config get-value project)
+             NUM=$(gcloud projects describe "$PROJ" \
+                     --format='value(projectNumber)')
+
+             gcloud projects add-iam-policy-binding "$PROJ" \
+               --member="serviceAccount:${NUM}-compute@developer.gserviceaccount.com" \
+               --role=roles/cloudbuild.builds.builder \
+               --condition=None
+
+         Allow a minute for IAM to propagate, then deploy. Confirm with:
+
+             gcloud projects get-iam-policy "$PROJ" \
+               --flatten="bindings[].members" \
+               --filter="bindings.members:${NUM}-compute@developer" \
+               --format="value(bindings.role)"
+
 [ ] E4. Deploy from the submodule directory. Cloud Run builds remotely, so
         Colima does NOT need to be running.
 
@@ -340,7 +384,7 @@ PHASE E — BACKEND                                  ~20 min    $0
 
             gcloud run deploy url-shortener \
               --source . \
-              --region asia-south1 \
+              --region asia-southeast1 \
               --allow-unauthenticated \
               --memory 512Mi \
               --cpu 1 \
@@ -362,7 +406,7 @@ PHASE E — BACKEND                                  ~20 min    $0
 [ ] E5. Confirm it came up:
 
             gcloud run services describe url-shortener \
-              --region asia-south1 --format='value(status.url)'
+              --region asia-southeast1 --format='value(status.url)'
 
             curl -s <that url>/health
 
@@ -371,7 +415,7 @@ PHASE E — BACKEND                                  ~20 min    $0
 
 [ ] E6. Check the logs for a clean start:
 
-            gcloud run services logs read url-shortener --region asia-south1 --limit 20
+            gcloud run services logs read url-shortener --region asia-southeast1 --limit 20
 
         You SHOULD still see the geoip line — that one is expected:
             "geoip: database unavailable – country lookups disabled"
@@ -388,7 +432,7 @@ active versions:
     printf '%s' '<shard1 dsn>' | gcloud secrets create db-shard-1 --data-file=-
     printf '%s' '<rediss url>' | gcloud secrets create redis-url  --data-file=-
 
-    gcloud run services update url-shortener --region asia-south1 \
+    gcloud run services update url-shortener --region asia-southeast1 \
       --set-secrets "DB_SHARD_0_DSN=db-shard-0:latest" \
       --set-secrets "DB_SHARD_1_DSN=db-shard-1:latest" \
       --set-secrets "REDIS_URL=redis-url:latest"
