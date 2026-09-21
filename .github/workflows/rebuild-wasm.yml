@@ -1,0 +1,140 @@
+# Rebuilds the Machine Room wasm bundles from the chapter submodules.
+#
+# WHY THIS EXISTS
+# ---------------
+# frontend/static/*.wasm is committed, and the Cloudflare Pages build command
+# is deliberately empty — Pages just serves what is in the repo. That keeps the
+# Pages build trivial and avoids provisioning Go + Rust + wasm-bindgen inside
+# it, but it means a change in a chapter submodule reaches the site only when
+# someone rebuilds locally and commits. This workflow is that someone.
+#
+# HOW A SUBMODULE CHANGE REACHES THE WEB
+#   1. you push to e.g. zeayush/autocomplete-rs
+#   2. that repo's notify-portfolio workflow fires a repository_dispatch here
+#   3. this workflow advances the submodule pointers, rebuilds both bundles,
+#      and commits the result
+#   4. Cloudflare Pages sees the push and redeploys
+#
+# The push in step 3 uses GITHUB_TOKEN, which by design does not re-trigger
+# workflows — so there is no build loop. Pages is a git webhook, not a
+# workflow, so it still deploys.
+
+name: Rebuild wasm
+
+on:
+  repository_dispatch:
+    types: [submodule-updated]
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      # Only the things that can change the output. Notably NOT
+      # frontend/static/** — that is this workflow's own output.
+      - 'frontend/wasm/**'
+      - 'frontend/wasm-rs/**'
+      - 'frontend/build.sh'
+      - '.gitmodules'
+      - '.github/workflows/rebuild-wasm.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rebuild-wasm
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Advance submodules to their latest upstream commit
+        run: |
+          git submodule update --remote --recursive
+          echo "--- submodule state ---"
+          git submodule status
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache-dependency-path: frontend/wasm/go.sum
+
+      - name: Add the Rust wasm target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            frontend/wasm-rs/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('frontend/wasm-rs/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Install wasm-bindgen CLI at the pinned version
+        run: |
+          set -euo pipefail
+          # build.sh refuses to run if the CLI version differs from the crate
+          # version in Cargo.lock, so read the required version from there
+          # rather than hardcoding it.
+          VER=$(awk '/^name = "wasm-bindgen"$/{getline; gsub(/[",]/,""); print $3; exit}' \
+                  frontend/wasm-rs/Cargo.lock)
+          echo "pinned wasm-bindgen: $VER"
+
+          ASSET="wasm-bindgen-${VER}-x86_64-unknown-linux-musl"
+          # A prebuilt binary takes seconds; `cargo install` takes minutes.
+          # The project moved orgs, so try both release hosts before building.
+          for HOST in wasm-bindgen rustwasm; do
+            URL="https://github.com/${HOST}/wasm-bindgen/releases/download/${VER}/${ASSET}.tar.gz"
+            if curl -sSfL "$URL" -o /tmp/wb.tar.gz 2>/dev/null; then
+              tar xzf /tmp/wb.tar.gz -C /tmp
+              sudo install -m755 "/tmp/${ASSET}/wasm-bindgen" /usr/local/bin/wasm-bindgen
+              break
+            fi
+          done
+
+          if ! command -v wasm-bindgen >/dev/null 2>&1; then
+            echo "no prebuilt binary found, falling back to cargo install"
+            cargo install -f wasm-bindgen-cli --version "$VER"
+          fi
+
+          wasm-bindgen --version
+
+      - name: Build both wasm bundles
+        run: ./frontend/build.sh
+
+      - name: Fail if the Rust half was skipped
+        run: |
+          # build.sh treats a missing Rust toolchain as a warning so that
+          # contributors without one can still build the Go panels. In CI that
+          # leniency would silently ship a stale 1.13, so assert here instead.
+          test -f frontend/static/machine_rs_bg.wasm
+          test -f frontend/static/machine_rs.js
+          test -f frontend/static/machine.wasm
+          ls -lh frontend/static/
+
+      - name: Commit and push if anything changed
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Submodule pointers move when --remote advanced them; the static
+          # artifacts move when the rebuilt output actually differs.
+          git add frontend/static .gitmodules
+          git add -- '1.4-Rate-Limiter' '1.5-Consistent-Hashing' \
+                     '1.7-Unique-ID-Generator' '1.13-Search-Autocomplete' || true
+
+          if git diff --cached --quiet; then
+            echo "no change — submodules and artifacts are already current"
+            exit 0
+          fi
+
+          git diff --cached --stat
+          git commit -m "ci: rebuild wasm from submodule changes"
+          git push

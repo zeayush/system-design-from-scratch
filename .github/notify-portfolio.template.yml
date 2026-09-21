@@ -1,0 +1,73 @@
+# ── COPY THIS INTO EACH CHAPTER REPO ─────────────────────────────────────────
+#
+#   destination:  .github/workflows/notify-portfolio.yml
+#   copy it into: zeayush/rate-limiter-go          (feeds 1.4)
+#                 zeayush/consistent-hashing-go    (feeds 1.5)
+#                 zeayush/uid-generator-go         (feeds 1.7)
+#                 zeayush/autocomplete-rs          (feeds 1.13)
+#
+# Those four are the repos compiled into the wasm bundles. The others
+# (consistent-hash-rs, uid-generator-rs) are not currently built into the
+# page, and url-shortener-go is a deployed service rather than wasm — see
+# deploymentplan.txt section 5 for that one.
+#
+# ── ONE-TIME SETUP, PER REPO ─────────────────────────────────────────────────
+#
+# This needs a token, because GITHUB_TOKEN is scoped to its own repository and
+# cannot dispatch to another one.
+#
+#   1. Create a fine-grained personal access token:
+#        github.com/settings/personal-access-tokens/new
+#        Repository access : only zeayush/system-design-from-scratch
+#        Permissions       : Contents -> Read and write
+#        Expiration        : set a reminder; a dead token fails silently
+#
+#   2. In EACH chapter repo above:
+#        Settings -> Secrets and variables -> Actions -> New repository secret
+#        Name  : PORTFOLIO_DISPATCH_TOKEN
+#        Value : the token from step 1
+#
+#   3. Commit this file to that repo as .github/workflows/notify-portfolio.yml
+#
+# ── WHAT HAPPENS THEN ────────────────────────────────────────────────────────
+#
+#   push to chapter repo
+#     -> this workflow fires a repository_dispatch
+#     -> system-design-from-scratch runs "Rebuild wasm"
+#     -> it advances the submodule pointer, rebuilds, commits
+#     -> Cloudflare Pages redeploys
+#
+# Roughly three to five minutes end to end, most of it the Rust build.
+
+name: Notify portfolio
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ask the portfolio to rebuild its wasm
+        env:
+          TOKEN: ${{ secrets.PORTFOLIO_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "PORTFOLIO_DISPATCH_TOKEN is not set in this repo's secrets."
+            echo "See the setup notes at the top of this file."
+            exit 1
+          fi
+
+          curl -sSf -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/zeayush/system-design-from-scratch/dispatches \
+            -d "{\"event_type\":\"submodule-updated\",
+                 \"client_payload\":{
+                   \"repo\":\"${GITHUB_REPOSITORY}\",
+                   \"sha\":\"${GITHUB_SHA}\"}}"
+
+          echo "dispatched: ${GITHUB_REPOSITORY}@${GITHUB_SHA:0:7}"

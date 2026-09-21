@@ -536,13 +536,65 @@ shutdown can drop whatever has not flushed. Cosmetic for a demo.
 
 Frontend change      -> git push. Pages project #1 redeploys automatically.
 Redirect edge change -> git push. Pages project #2 redeploys automatically.
-Backend change       -> gcloud run deploy --source . from the submodule dir.
-                        Remember to commit and push the submodule too, and
-                        then the parent's updated pointer.
-Chapter wasm change  -> go is installed now, so frontend/build.sh works.
-                        COMMIT the regenerated frontend/static/ artifacts.
-                        The Pages build command stays empty.
 Schema change        -> run the SQL against BOTH shards.
+
+CHAPTER WASM CHANGE (1.4 / 1.5 / 1.7 / 1.13) -> AUTOMATED.
+
+  .github/workflows/rebuild-wasm.yml rebuilds and commits the bundles.
+  The chain:
+
+      push to a chapter repo
+        -> its notify-portfolio.yml fires a repository_dispatch
+        -> this repo runs "Rebuild wasm": advances the submodule pointer,
+           runs frontend/build.sh, commits frontend/static/
+        -> Cloudflare Pages sees the push and redeploys
+
+  Three to five minutes end to end, most of it the Rust build.
+
+  WHY THE ARTIFACTS STAY COMMITTED: the Pages build command is empty on
+  purpose. Building inside Pages would mean provisioning Go, Rust and a
+  version-matched wasm-bindgen in its image on every deploy, against a
+  build-minute limit, for output that changes only when a submodule does.
+  Building in Actions and committing the result keeps the Pages deploy to
+  a file copy.
+
+  NO BUILD LOOP: the workflow pushes with GITHUB_TOKEN, which by design
+  does not re-trigger workflows. Pages is a git webhook rather than a
+  workflow, so it still deploys.
+
+  ONE-TIME SETUP, still to do:
+    Copy .github/notify-portfolio.template.yml into each chapter repo as
+    .github/workflows/notify-portfolio.yml, and add a PORTFOLIO_DISPATCH_TOKEN
+    secret to each. Full instructions are in the header of that file.
+    Until that is done, trigger a rebuild by hand:
+      Actions -> Rebuild wasm -> Run workflow
+
+  MANUAL FALLBACK (all the toolchain, locally):
+      git submodule update --init --recursive
+      rustup target add wasm32-unknown-unknown
+      cargo install -f wasm-bindgen-cli --version <version in
+        frontend/wasm-rs/Cargo.lock>
+      ./frontend/build.sh
+      git add frontend/static && git commit && git push
+
+  WATCH FOR: build.sh downgrades a missing or version-mismatched Rust
+  toolchain to a warning and skips 1.13, leaving the previous artifact in
+  place. Locally that is silent. The workflow asserts the files exist so
+  CI fails loudly instead.
+
+BACKEND CHANGE (1.8) -> still manual, and a different pipeline. The wasm
+  workflow does not touch it; url-shortener-go is a deployed service, not
+  a bundle.
+
+      cd 1.8-URL-Shortener/url-shortener-go
+      git commit && git push
+      gcloud run deploy url-shortener --source . --region asia-southeast1
+      cd ../.. && git add 1.8-URL-Shortener && git commit && git push
+
+  Automating this means giving Actions access to GCP — Workload Identity
+  Federation (no stored key, preferred) or a service-account JSON in a
+  repo secret. Not set up; deploying 1.8 by hand is a minute's work and it
+  changes rarely.
 
 Cloudflare Pages free tier: unlimited bandwidth and static requests. The
 3.2 MB machine.wasm is lazy-loaded per panel, so the hero costs nothing.
