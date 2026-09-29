@@ -36,7 +36,7 @@
 #     -> it advances the submodule pointer, rebuilds, commits
 #     -> Cloudflare Pages redeploys
 #
-# Roughly three to five minutes end to end, most of it the Rust build.
+# Takes roughly three to five minutes end to end, mostly the Rust build.
 
 name: Notify portfolio
 

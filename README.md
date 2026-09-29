@@ -34,7 +34,7 @@ system-design-from-scratch/
 └── 1.13-Search-Autocomplete/  → autocomplete-rs
 ```
 
-Clone with all submodules:
+Clone with submodules:
 
 ```bash
 git clone --recurse-submodules https://github.com/zeayush/system-design-from-scratch

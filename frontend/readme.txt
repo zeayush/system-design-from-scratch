@@ -1,7 +1,7 @@
 SYSTEM DESIGN MACHINE ROOM — frontend
 =====================================
 
-A single-page, playable showroom for the implementations in this repo. Each
+A single-page, interactive showroom for the implementations in this repo. Each
 chapter is a panel you can operate, drawn in white pencil on pure black.
 
 The page is driven by the real chapter libraries compiled to WebAssembly.
