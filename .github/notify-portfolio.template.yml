@@ -8,8 +8,7 @@
 #
 # Those four are the repos compiled into the wasm bundles. The others
 # (consistent-hash-rs, uid-generator-rs) are not currently built into the
-# page, and url-shortener-go is a deployed service rather than wasm — see
-# deploymentplan.txt section 5 for that one.
+# page, and url-shortener-go is a deployed service rather than wasm.
 #
 # ── ONE-TIME SETUP, PER REPO ─────────────────────────────────────────────────
 #

@@ -12,15 +12,13 @@
 //! Rather than modify the chapter repo, this crate mounts the three modules it
 //! needs as its own, straight out of the submodule working tree. `trie`,
 //! `scoring` and `typo` depend only on `std` plus one `serde::Serialize`
-//! derive, and they reach for each other as `crate::scoring` / `crate::typo` —
-//! which resolves correctly once they are mounted side by side at this crate's
-//! root. The bytes compiled below are the chapter's own, unmodified, read in
-//! place; nothing is vendored or copied.
+//! derive, and they refer to each other as `crate::scoring` / `crate::typo`,
+//! which resolves once they are mounted side by side at this crate's root.
+//! Nothing is vendored or copied.
 //!
-//! The coupling this buys is worth stating plainly: if autocomplete-rs ever
-//! adds a `crate::error` or `crate::storage` import to one of these three
-//! modules, this build breaks. build.sh fails loudly when it does, and the fix
-//! is a feature flag upstream.
+//! If autocomplete-rs ever adds a `crate::error` or `crate::storage` import to
+//! one of these three modules, this build breaks, and the fix is a feature
+//! flag upstream.
 
 // The chapter's modules carry their full API; this shim uses a slice of it,
 // so dead-code warnings here are about the library being bigger than the demo.
@@ -40,9 +38,8 @@ use wasm_bindgen::prelude::*;
 
 thread_local! {
     /// One trie for the page. wasm is single-threaded, so a thread_local
-    /// RefCell is the whole concurrency story — the Engine's DashMap and
-    /// RwLock exist to serve many tenants across many threads, which is a
-    /// problem the browser does not have.
+    /// RefCell is enough; the Engine's DashMap and RwLock serve many tenants
+    /// across many threads, which the browser does not need.
     static TRIE: RefCell<RadixTrie> = RefCell::new(RadixTrie::new());
 }
 
@@ -123,16 +120,14 @@ pub fn stats() -> String {
 ///
 ///   cargo test --manifest-path frontend/wasm-rs/Cargo.toml
 ///
-/// The counterpart to wasm/smoke.mjs: it does not re-test autocomplete-rs (the
-/// chapter repo has its own suite, which incidentally runs here too — mounting
-/// the modules brings their #[cfg(test)] blocks along). It checks that this
-/// shim marshals the real corpus correctly and that the trie answers the way
-/// the panel's copy claims it does. Runs natively, so it catches breakage
-/// without a browser.
+/// The counterpart to wasm/smoke.mjs. It does not re-test autocomplete-rs (the
+/// chapter's own #[cfg(test)] blocks come along with the mounted modules and
+/// run here too); it checks that this shim loads the real corpus correctly and
+/// that the trie answers the way the panel's copy says. Runs natively.
 ///
-/// These live in-file rather than in tests/ on purpose: an integration test
-/// would need the crate to expose an `rlib`, and adding one to the crate graph
-/// costs LTO about 44% of the shipped wasm (76KB -> 110KB) for no runtime gain.
+/// These live in-file rather than in tests/: an integration test would need
+/// the crate to expose an `rlib`, which costs LTO about 44% of the shipped wasm
+/// (76KB -> 110KB).
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,10 +156,9 @@ mod tests {
         let st: serde_json::Value = serde_json::from_str(&stats()).unwrap();
         assert_eq!(st["terms"], 50_000);
 
-        // The panel's compression claim, and the reason it is stated in bytes
-        // rather than nodes: a radix trie holds MORE nodes than terms (edge splits
-        // create internal branch nodes), so a node count says nothing flattering.
-        // The win is that a shared prefix is stored once, which shows up in the
+        // The panel's compression claim is stated in bytes rather than nodes: a
+        // radix trie holds MORE nodes than terms (edge splits create internal
+        // branch nodes). A shared prefix is stored once, which shows up in the
         // edge-label bytes — ~118KB of labels for ~375KB of raw terms.
         let edge_bytes = st["bytes"].as_u64().unwrap() as f64;
         let raw_bytes: usize = corpus().lines().filter_map(|l| l.split('\t').next()).map(str::len).sum();
@@ -202,9 +196,8 @@ mod tests {
 
         // "recieve" is a TRANSPOSITION, which plain Levenshtein charges two edits
         // for — Damerau-Levenshtein would charge one. So budget 1 does not find
-        // "receive"; it finds "relieve" instead, which is the panel's whole point
-        // about what the cheap budget actually buys you. Pin that behaviour: if the
-        // chapter ever switches to Damerau, this test says so and the copy is wrong.
+        // "receive" (it finds "relieve"). If the chapter ever switches to
+        // Damerau, this test fails and the panel copy needs updating.
         assert!(
             !terms(&fuzzy("recieve", 1, 10)).contains(&"receive".to_string()),
             "a transposition should cost more than one edit under plain Levenshtein"

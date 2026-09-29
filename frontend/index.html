@@ -209,9 +209,9 @@ a.link:hover{text-decoration-color:var(--chalk)}
 <header class="hero wrap">
   <div class="kicker">Alex Xu · System Design Interview · built from scratch</div>
   <h1>The <span class="u">Machine<svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 12 C 60 4, 130 17, 205 8 S 288 6, 297 11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" filter="url(#pencil)" opacity=".85"/><path d="M6 17 C 70 10, 140 20, 210 13 S 290 12, 295 15" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" filter="url(#pencil)" opacity=".4"/></svg></span><br>Room</h1>
-  <p class="lede">Five chapters, five working machines — Go and Rust, no pseudocode, no diagrams pretending to be code. This page is the showroom, and every machine below is <em>live</em>. Mash the buttons. Break them. They'll tell you exactly what they're doing.</p>
+  <p class="lede">Five chapters, five working machines in Go and Rust. Every machine below is <em>live</em>: the real libraries, compiled to WebAssembly and running in your tab. Push them until they break.</p>
   <div class="meta">
-    <span class="tag">5 built · 21 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
+    <span class="tag">5 built · 20 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
   </div>
   <div class="cue">↓ &nbsp;SCROLL. START MASHING.</div>
 </header>
@@ -225,7 +225,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
       <span class="stack">rate-limiter-go · Go + Redis</span>
     </div>
     <div class="body">
-      <p class="blurb">Three algorithms, one honest question: <b>how hard can you hit it before it says no?</b> Set the budget, then hammer the button. Watch the bucket drain, the window slam shut, the log age out.</p>
+      <p class="blurb">Three algorithms, one question: <b>how hard can you hit it before it says no?</b> Set the budget, then hammer the button. Watch the bucket drain, the window slam shut, the log age out.</p>
 
       <div class="controls">
         <div class="field"><label for="rl-algo">Algorithm</label>
@@ -262,7 +262,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
         <table><thead><tr><th>Implemented in the repo</th><th>What it costs you</th></tr></thead>
         <tbody>
           <tr><td><b>Lua-atomic Redis counters</b></td><td>kills the INCR/EXPIRE race — one round trip, no lost writes</td></tr>
-          <tr><td><b>Fail-open on Redis outage</b></td><td>limiter down ≠ service down; requests pass, metrics scream</td></tr>
+          <tr><td><b>In-memory fallback on Redis outage</b></td><td>Redis down ≠ service down; limiting continues per instance</td></tr>
           <tr><td><b>Per-key limiting</b></td><td>IP · API key · user ID, same interface</td></tr>
           <tr><td><b>net/http + Gin middleware</b></td><td>Prometheus counters wired in behind both</td></tr>
         </tbody></table>
@@ -280,7 +280,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
       <span class="stack">consistent-hashing-go · consistent-hash-rs</span>
     </div>
     <div class="body">
-      <p class="blurb">240 keys live on this ring. Kill a node and watch what moves — then look at what <b>plain <span class="mono">hash % N</span> would have moved instead.</b> That gap is the entire chapter.</p>
+      <p class="blurb">240 keys live on this ring. Kill a node and watch what moves — then look at what <b>plain <span class="mono">hash % N</span> would have moved instead.</b> That gap is what the chapter is about.</p>
 
       <div class="controls">
         <button class="btn" id="ch-add" type="button">+ add node</button>
@@ -309,7 +309,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
         </div>
       </div>
 
-      <p class="note" style="margin-top:18px">Ring positions from CRC-style 32-bit hashing · owner = first virtual node clockwise · O(log n) binary search on a sorted ring · <span class="mono">sync.RWMutex</span> in Go, <span class="mono">RwLock</span> in Rust for read-heavy traffic.</p>
+      <p class="note" style="margin-top:18px">Ring positions from CRC-32 hashing · owner = first virtual node clockwise · O(log n) binary search on a sorted ring · <span class="mono">sync.RWMutex</span> in Go, <span class="mono">RwLock</span> in Rust for read-heavy traffic.</p>
     </div>
   </div>
 </section>
@@ -350,7 +350,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
         <div class="stat"><div class="k">Peak seq / ms</div><div class="v" id="uid-seq">0</div></div>
         <div class="stat"><div class="k">Throughput</div><div class="v sm" id="uid-tput">—</div></div>
       </div>
-      <p class="note" id="uid-burstnote" style="margin-top:14px">Machine ID derived from the MAC address at boot · custom epoch · clock-skew guard refuses to move backwards · sequence overflow spins to the next millisecond rather than repeating.</p>
+      <p class="note" id="uid-burstnote" style="margin-top:14px">Machine ID from env var, hostname or IP hash · custom epoch · clock-skew guard refuses to move backwards · sequence overflow spins to the next millisecond rather than repeating.</p>
     </div>
   </div>
 </section>
@@ -361,10 +361,10 @@ a.link:hover{text-decoration-color:var(--chalk)}
     <div class="head">
       <span class="chapno">CH 1.8</span>
       <h2>URL Shortener</h2>
-      <span class="stack">url-shortener-go · Postgres shards + Redis</span>
+      <span class="stack">url-shortener-go · Postgres shards + Redis cache</span>
     </div>
     <div class="body">
-      <p class="blurb">Paste anything long. Watch it get <b>Base-62'd down to seven characters</b>, hashed onto a shard by the ring from Chapter 5, then resolve it twice — once cold from Postgres, once warm from Redis.</p>
+      <p class="blurb">Paste anything long. It comes back as a <b>random six-character Base-62 code</b>, stored on a Postgres shard picked by the ring from Chapter 5. Then resolve it and see the round trip.</p>
 
       <div class="controls">
         <div class="field"><label for="us-url">Long URL</label>
@@ -382,7 +382,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
         <table id="us-table"><thead><tr><th>Short</th><th>Shard</th><th>Clicks</th><th>Last lookup</th><th></th></tr></thead>
         <tbody id="us-rows"><tr><td colspan="5" class="dim">Nothing shortened yet — squeeze something.</td></tr></tbody></table>
       </div>
-      <p class="note" style="margin-top:14px">Base-62 over an auto-increment id · consistent-hash sharding across 4 Postgres shards (yes, the Ch. 5 ring) · read-through Redis cache · click analytics with GeoIP · expiry + a token-bucket limiter on writes.</p>
+      <p class="note" style="margin-top:14px">6 chars from crypto/rand over 0-9A-Za-z · consistent-hash sharding across Postgres shards (the Ch. 5 ring) · read-through Redis cache · click analytics with GeoIP · expiry + a token-bucket limiter on writes.</p>
     </div>
   </div>
 </section>
@@ -396,7 +396,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
       <span class="stack">autocomplete-rs · Rust → wasm</span>
     </div>
     <div class="body">
-      <p class="blurb">50,000 real English words, weighted by <b>real Google web-corpus counts</b> — not a fixture, not a random string generator. The radix trie answers exact prefixes in <b>microseconds</b>. Then misspell one on purpose and watch what forgiveness costs.</p>
+      <p class="blurb">50,000 English words, weighted by <b>real Google web-corpus counts</b>. The radix trie answers exact prefixes in <b>microseconds</b>. Then misspell one on purpose and watch what forgiveness costs.</p>
 
       <div class="controls">
         <div class="field"><label for="ac-q">Query</label>
@@ -421,7 +421,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
         <div class="stat"><div class="k">Edge labels</div><div class="v sm" id="ac-bytes">—</div></div>
       </div>
       <p class="note" id="ac-timing" style="margin-top:12px">&nbsp;</p>
-      <p class="note" style="margin-top:10px">Radix trie over bytes · every node caches <span class="mono">max_subtree_freq</span>, so top-K skips any subtree that cannot beat the heap cutoff · one Levenshtein DP row carried down the walk, abandoned the moment its minimum exceeds the budget. Plain Levenshtein, not Damerau — so a transposition like <span class="mono">recieve</span> → <span class="mono">receive</span> costs <b>two</b> edits, and at a budget of one the trie hands you <span class="mono">relieve</span> instead.</p>
+      <p class="note" style="margin-top:10px">Radix trie over bytes · every node caches <span class="mono">max_subtree_freq</span>, so top-K skips any subtree that cannot beat the heap cutoff · one Levenshtein DP row carried down the walk, abandoned once its minimum exceeds the budget. Plain Levenshtein, not Damerau — so a transposition like <span class="mono">recieve</span> → <span class="mono">receive</span> costs <b>two</b> edits, and at a budget of one the trie hands you <span class="mono">relieve</span> instead.</p>
       <p class="note" style="margin-top:10px;color:var(--c-18)">Query path only. The RocksDB write-behind and the multi-tenant engine need a server and are not demoed here — see the chapter repo.</p>
     </div>
   </div>
@@ -430,13 +430,13 @@ a.link:hover{text-decoration-color:var(--chalk)}
 <!-- ============ FOOT ============ -->
 <footer class="wrap foot reveal">
   <h2 style="font-size:clamp(30px,5vw,52px)">Still on the bench</h2>
-  <p class="lede" style="font-size:18px;margin-top:14px">Twenty-one chapters left across both volumes. Key-value store is next off the pile.</p>
+  <p class="lede" style="font-size:18px;margin-top:14px">Twenty chapters left across both volumes. Key-value store is next off the pile.</p>
   <div class="roadmap">
     <span class="soon">1.6 Key-Value Store</span><span class="soon">1.9 Web Crawler</span><span class="soon">1.10 Notifications</span>
     <span class="soon">1.11 News Feed</span><span class="soon">1.12 Chat</span>
     <span class="soon">1.14 YouTube</span><span class="soon">1.15 Google Drive</span><span class="soon">2.1 Proximity</span>
-    <span class="soon">2.4 Message Queue</span><span class="soon">2.5 Metrics</span><span class="soon">2.6 Ad Click Agg</span>
-    <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.9 S3 Storage</span><span class="soon">2.10 Leaderboard</span>
+    <span class="soon">2.2 Nearby Friends</span><span class="soon">2.3 Google Maps</span><span class="soon">2.4 Message Queue</span><span class="soon">2.5 Metrics</span><span class="soon">2.6 Ad Click Agg</span>
+    <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.8 Email</span><span class="soon">2.9 S3 Storage</span><span class="soon">2.10 Leaderboard</span>
     <span class="soon">2.11 Payments</span><span class="soon">2.12 Digital Wallet</span><span class="soon">2.13 Stock Exchange</span>
   </div>
   <p style="margin-top:34px;color:var(--c-52)">Every machine here is a real repo with tests and benchmarks —
@@ -458,10 +458,11 @@ a.link:hover{text-decoration-color:var(--chalk)}
      1.5  consistent-hashing-go          → ringNew / Add / Remove / Get / …
      1.7  uid-generator-go/uid           → snowNext / snowBurst / ulidNew
      1.8  url-shortener-go               → HTTP, same-origin via /api/* proxy
+     1.13 autocomplete-rs (wasm-rs/)     → query / fuzzy / stats
 
-   The one exception is the "hash % N" counterfactual in the ring panel. That is
-   deliberately NOT in your library — it is the naive baseline the chapter exists
-   to beat — so it is computed here, in JS, purely for comparison.
+   The one exception is the "hash % N" counterfactual in the ring panel. The
+   library does not implement modulo hashing — it is the naive baseline the
+   chapter exists to beat — so it is computed here, in JS, for comparison.
    ========================================================================== */
 (function(){
 "use strict";
@@ -615,8 +616,7 @@ function bubble(host, text, opts){
 
 /* ═══════════════ 1.4 RATE LIMITER ═══════════════════════════════════════════
    Every allow/deny below is limiter.Allow() from rate-limiter-go, running in
-   this tab. The bucket is yours alone — mashing it cannot affect another
-   visitor, which a shared server demo could not honestly claim.
+   this tab, so each visitor has their own bucket.
    ========================================================================== */
 onFirstView("#rate-limiter", function(){
   var algoEl=$("#rl-algo"), limitEl=$("#rl-limit"), winEl=$("#rl-window"),
@@ -981,10 +981,8 @@ onFirstView("#uid", function(){
         if(mode==="snow"){
           peakSeq=Math.max(peakSeq,r.maxSeq); seqEl.textContent=peakSeq;
           /* Filling the 12-bit sequence needs >4.095M NextID calls sustained
-             for a full millisecond. Verified against the real library
-             (frontend/wasm/smoke.mjs): this wasm build peaks around 1.3-1.9M/s,
-             so rollovers is usually 0 even at n=1,000,000 — that is the honest
-             result, not a bug, and the copy below reports whichever is true. */
+             for a full millisecond. This wasm build peaks around 1.3-1.9M/s,
+             so rollovers is usually 0; the copy reports whichever is true. */
           note.innerHTML = r.rollovers > 0
             ? "<b style='color:var(--chalk)'>50,000 real IDs in "+r.ms.toFixed(1)+" ms · "+dupes+" collisions.</b> "+
               "The 12-bit sequence filled up and NextID parked for the clock to tick <b style='color:var(--chalk)'>"+r.rollovers+"</b> times — that park is the whole safety guarantee."
@@ -1029,7 +1027,7 @@ onFirstView("#shortener", function(){
   }
   rows.addEventListener("click", function(e){
     var b=e.target.closest("button[data-i]");
-    if(!b || !SHORTENER_API) { if(b) offline("#shortener", new Error("url-shortener-go is not deployed. Set SHORTENER_API and add functions/api/[[path]].js")); return; }
+    if(!b || !SHORTENER_API) { if(b) offline("#shortener", new Error("url-shortener-go is not deployed yet.")); return; }
     var l=links[+b.dataset.i], t0=performance.now();
     fetch(SHORTENER_API+"/links/"+encodeURIComponent(l.short_code))
       .then(function(r){ return r.json(); })
@@ -1047,9 +1045,8 @@ onFirstView("#shortener", function(){
     if(!raw){ bubble(stage,"Give me something to squeeze.",{alarm:true,left:16,top:10,hold:1500}); return; }
     if(!SHORTENER_API){
       offline("#shortener", new Error(
-        "url-shortener-go is not deployed yet.\n\nIt needs Postgres + Redis, so it cannot run as WebAssembly\n"+
-        "like the other three. Deploy its docker-compose stack, then set\n"+
-        "SHORTENER_API = \"/api\" and add frontend/functions/api/[[path]].js"));
+        "url-shortener-go is not deployed yet.\n\nIt needs Postgres and Redis, so it cannot run as WebAssembly\n"+
+        "like the other four."));
       return;
     }
     busy=true; goBtn.disabled=true; pipe.innerHTML="";
@@ -1085,8 +1082,8 @@ onFirstView("#shortener", function(){
    Every suggestion is RadixTrie::prefix_search / fuzzy_search out of
    autocomplete-rs, compiled to wasm. The corpus is 50,000 real English words
    carrying their real Google web-corpus counts; see frontend/data/build-corpus.sh
-   for exactly how it was cut. Nothing here ranks, scores or matches — the trie
-   does all of it and this code draws the answer.
+   for how it was cut. Nothing here ranks, scores or matches; this code only
+   draws what the trie returns.
    ────────────────────────────────────────────────────────────────────────── */
 onFirstView("#autocomplete", function(){
   var panel = $("#autocomplete"), stage = $(".stage", panel);
@@ -1107,9 +1104,7 @@ onFirstView("#autocomplete", function(){
      finish in a few hundred nanoseconds, which reads as a flat 0. So: run it
      once to get the order of magnitude, then repeat enough times that the
      total clears the clamp by a wide margin, and report the mean. Slow calls
-     (fuzzy at budget 2 runs into milliseconds) are measured once and left
-     alone. Same reason cargo bench exists — one sample of a fast function is
-     not a measurement. */
+     (fuzzy at budget 2 runs into milliseconds) are measured once. */
   function timed(fn){
     var t0 = performance.now(); var out = fn(); var dt = performance.now() - t0;
     if (dt > 2) return { out: out, us: dt * 1000, runs: 1 };
@@ -1224,7 +1219,5 @@ onFirstView("#autocomplete", function(){
 
 })();
 </script>
-
-
 </body>
 </html>

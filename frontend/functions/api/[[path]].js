@@ -17,10 +17,9 @@
  *
  *  2. Client IP. The service applies rate-limiter-go to /api keyed by
  *     GinIPExtractor -> c.ClientIP(). Behind a naive proxy every visitor
- *     arrives as one Cloudflare IP and shares a single bucket — the first
- *     enthusiastic visitor would 429 everybody else. We forward the real
- *     client address as X-Forwarded-For, which c.ClientIP() honours, so each
- *     visitor keeps their own bucket.
+ *     arrives as one Cloudflare IP and shares a single bucket. The real
+ *     client address is forwarded as X-Forwarded-For, which c.ClientIP()
+ *     honours, so each visitor keeps their own bucket.
  *
  *  3. Origin secrecy. The backend URL lives in the SHORTENER_ORIGIN environment
  *     variable, set in the Pages dashboard, not committed here.
@@ -65,8 +64,7 @@ export async function onRequest(context) {
   if (contentType) headers.set("content-type", contentType);
   headers.set("accept", "application/json");
 
-  // Blocker 2: hand the service the real client address so its IP-keyed
-  // limiter still sees one bucket per visitor rather than one per proxy.
+  // See (2) above: one rate-limit bucket per visitor, not one per proxy.
   const clientIP = request.headers.get("CF-Connecting-IP");
   if (clientIP) {
     headers.set("X-Forwarded-For", clientIP);

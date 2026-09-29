@@ -21,15 +21,12 @@
 # raw web crawl is full of: "sex" ranks 182, "porn" 659, "nude" 828. Those are
 # the first suggestions a visitor sees on typing "s" or "p". Intersecting with a
 # dictionary also drops crawl debris that ranks well above rank 50,000
-# ("webalizer", "anleitung", "paa") and is what makes the panel read like a
-# search box rather than a scrape.
+# ("webalizer", "anleitung", "paa").
 #
 # The frequencies are never touched — every count below is the real Google web
-# count. Only the vocabulary is restricted. Say so wherever this is described,
-# because "real data" is the whole claim.
+# count. Only the vocabulary is restricted.
 #
-# To ship the unfiltered crawl instead, set KEEP_RAW=1. Read the paragraph above
-# first; this page is public.
+# To ship the unfiltered crawl instead, set KEEP_RAW=1.
 set -euo pipefail
 
 cd "$(dirname "$0")"

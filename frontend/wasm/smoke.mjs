@@ -117,11 +117,9 @@ check("50k ids generated", burst.n === 50000);
 check("50k ids all unique", burst.unique === 50000, `${50000 - burst.unique} collisions`);
 check("sequence never exceeds MaxSequence", burst.maxSeq <= 4095, `peak ${burst.maxSeq}`);
 console.log(`       → ${burst.ms.toFixed(1)} ms, ${Math.round(50000 / (burst.ms / 1000)).toLocaleString()}/s, peak seq ${burst.maxSeq}, ${burst.rollovers} rollovers`);
-// NOTE: rollovers is commonly 0. Filling the 4095-slot sequence needs >4.095M
-// NextID/sec sustained for a full millisecond; this wasm build's single-
-// threaded, interpreted throughput lands well under that (see wasm/BENCH.md).
-// The UI must not claim a rollover happened — it reports whatever the real
-// number is, including zero.
+// rollovers is commonly 0: filling the 4095-slot sequence needs >4.095M
+// NextID/sec sustained for a full millisecond, well above this single-threaded
+// wasm build's throughput. The UI reports the real number, including zero.
 
 const u = M.ulidNew();
 check("ulid is 26 chars", u.id.length === 26, u.id);
