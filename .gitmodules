@@ -19,3 +19,6 @@
 [submodule "1.13-Search-Autocomplete/autocomplete-rs"]
 	path = 1.13-Search-Autocomplete/autocomplete-rs
 	url = https://github.com/zeayush/autocomplete-rs
+[submodule "2.10-Leaderboard/leaderboard-go"]
+	path = 2.10-Leaderboard/leaderboard-go
+	url = https://github.com/zeayush/leaderboard-go

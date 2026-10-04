@@ -31,7 +31,8 @@ system-design-from-scratch/
 ├── 1.5-Consistent-Hashing/    → consistent-hashing-go · consistent-hash-rs
 ├── 1.7-Unique-ID-Generator/   → uid-generator-go · uid-generator-rs
 ├── 1.8-URL-Shortener/         → url-shortener-go
-└── 1.13-Search-Autocomplete/  → autocomplete-rs
+├── 1.13-Search-Autocomplete/  → autocomplete-rs
+└── 2.10-Leaderboard/          → leaderboard-go
 ```
 
 Clone with submodules:
@@ -82,7 +83,7 @@ git submodule update --init --recursive
 | `2.7-Hotel-Reservation` | Ch. 7 — Hotel Reservation System | — | — | 🔜 |
 | `2.8-Email-Service` | Ch. 8 — Distributed Email Service | — | — | 🔜 |
 | `2.9-S3-Object-Storage` | Ch. 9 — S3-like Object Storage | — | — | 🔜 |
-| `2.10-Leaderboard` | Ch. 10 — Real-time Gaming Leaderboard | — | — | 🔜 |
+| [`2.10-Leaderboard`](2.10-Leaderboard/) | Ch. 10 — Real-time Gaming Leaderboard | [leaderboard-go](https://github.com/zeayush/leaderboard-go) | Go | ✅ |
 | `2.11-Payment-System` | Ch. 11 — Payment System | — | — | 🔜 |
 | `2.12-Digital-Wallet` | Ch. 12 — Digital Wallet | — | — | 🔜 |
 | `2.13-Stock-Exchange` | Ch. 13 — Stock Exchange | — | — | 🔜 |
@@ -132,6 +133,14 @@ Autocomplete engine in Rust: radix trie over bytes, top-K by frequency with a bo
 **Key ideas implemented:** edge split/merge so no non-terminal node keeps a single child, `max_subtree_freq` cached per node so top-K skips any subtree that cannot beat the heap cutoff, one Levenshtein DP row carried down the walk and abandoned as soon as its minimum exceeds the budget (Hanov's method), writes queryable immediately from the in-memory trie while a background task coalesces up to 1000 ops or 50ms into one RocksDB `WriteBatch`.
 
 Benchmarks on a 100K-term corpus: prefix search 270ns–16µs depending on prefix length, fuzzy search 326µs at budget 1 and 4.13ms at budget 2. The last is just under the 5ms target, which is why the HTTP layer caps `typo` at 2.
+
+### Book 2 · Ch. 10 — Real-time Gaming Leaderboard · [`leaderboard-go`](https://github.com/zeayush/leaderboard-go)
+
+Real-time leaderboard service in Go — Redis sorted sets for O(log n) ranks, daily/weekly/all-time boards across global, regional and friends-only segments, percentile standings, and WebSocket push fanned out across every instance. Postgres holds the event log as the source of truth; Redis can be rebuilt from it at any time.
+
+**Key ideas implemented:** one Lua script updates all six boards a score belongs to atomically, midnight resets by key naming plus `EXPIREAT` (no cron), ties broken by arrival time packed into the float64 score, outbox relay with `FOR UPDATE SKIP LOCKED` for when Redis is down, per-board dirty-marking so push cost stays flat under load, and writes rate-limited through rate-limiter-go (integrates Ch. 4).
+
+Benchmarks at 1M players: rank read p99 2.0ms from Redis and 5.2ms through the HTTP API; score-to-push across instances p99 107ms.
 
 ---
 
@@ -189,6 +198,12 @@ docker compose up --build
 cd 1.13-Search-Autocomplete/autocomplete-rs
 cargo test
 cargo bench
+```
+
+```bash
+# Leaderboard (Docker)
+cd 2.10-Leaderboard/leaderboard-go
+docker compose up --build
 ```
 
 ---
