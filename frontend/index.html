@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Five chapters of Alex Xu's System Design Interview, built from scratch in Go and Rust - and playable. A rate limiter you can overload, a hash ring you can break, an ID generator you can spam, a URL shortener you can squeeze, an autocomplete you can misspell at.">
+<meta name="description" content="Six chapters of Alex Xu's System Design Interview, built from scratch in Go and Rust - and playable. A rate limiter you can overload, a hash ring you can break, an ID generator you can spam, a URL shortener you can squeeze, an autocomplete you can misspell at, a leaderboard you can climb.">
 <meta name="color-scheme" content="dark">
 <meta property="og:title" content="System Design Machine Room">
-<meta property="og:description" content="Five system design chapters, built from scratch - and playable in the browser.">
+<meta property="og:description" content="Six system design chapters, built from scratch - and playable in the browser.">
 <meta property="og:type" content="website">
 <title>System Design Machine Room</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,15 +203,15 @@ a.link:hover{text-decoration-color:var(--chalk)}
 </svg>
 
 <nav class="rail" aria-label="Chapters">
-  <a href="#rate-limiter">1.4</a><a href="#hashing">1.5</a><a href="#uid">1.7</a><a href="#shortener">1.8</a><a href="#autocomplete">1.13</a>
+  <a href="#rate-limiter">1.4</a><a href="#hashing">1.5</a><a href="#uid">1.7</a><a href="#shortener">1.8</a><a href="#autocomplete">1.13</a><a href="#leaderboard">2.10</a>
 </nav>
 
 <header class="hero wrap">
   <div class="kicker">Alex Xu · System Design Interview · built from scratch</div>
   <h1>The <span class="u">Machine<svg viewBox="0 0 300 20" preserveAspectRatio="none" aria-hidden="true"><path d="M2 12 C 60 4, 130 17, 205 8 S 288 6, 297 11" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" filter="url(#pencil)" opacity=".85"/><path d="M6 17 C 70 10, 140 20, 210 13 S 290 12, 295 15" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" filter="url(#pencil)" opacity=".4"/></svg></span><br>Room</h1>
-  <p class="lede">Five chapters, five working machines in Go and Rust. Every machine below is <em>live</em>: the real libraries, compiled to WebAssembly and running in your tab. Push them until they break.</p>
+  <p class="lede">Six chapters, six working machines in Go and Rust. Every machine below is <em>live</em>: four run the real libraries compiled to WebAssembly in your tab, two talk to deployed services. Push them until they break.</p>
   <div class="meta">
-    <span class="tag">5 built · 20 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
+    <span class="tag">6 built · 19 queued</span><span class="tag">Go · Rust</span><span class="tag">benchmarks or it didn't happen</span>
   </div>
   <div class="cue">↓ &nbsp;SCROLL. START MASHING.</div>
 </header>
@@ -427,6 +427,73 @@ a.link:hover{text-decoration-color:var(--chalk)}
   </div>
 </section>
 
+<!-- ============ 2.10 LEADERBOARD ============ -->
+<section class="panel wrap reveal" id="leaderboard">
+  <div class="slate">
+    <div class="head">
+      <span class="chapno">CH 2.10</span>
+      <h2>Live Leaderboard</h2>
+      <span class="stack">leaderboard-go · Redis sorted sets + Postgres</span>
+    </div>
+    <div class="body">
+      <p class="blurb">Pick a name, then click. <b>Every click is a point</b>, and everyone is ranked by how many they've racked up — today, this week, all time. Your rank is pushed to you over a WebSocket, not polled, and every rank is one <span class="mono">ZREVRANK</span>: O(log n), at twenty players or a million.</p>
+
+      <div class="controls" id="lb-join">
+        <div class="field"><label for="lb-name">Your name</label>
+          <input type="text" id="lb-name" maxlength="20" placeholder="what the board calls you" autocomplete="nickname" spellcheck="false" style="min-width:min(260px,70vw)"></div>
+        <div class="field"><label>Region</label>
+          <div class="seg" role="group" aria-label="Your region">
+            <button type="button" data-region="na" aria-pressed="true">na</button>
+            <button type="button" data-region="eu" aria-pressed="false">eu</button>
+            <button type="button" data-region="apac" aria-pressed="false">apac</button>
+          </div></div>
+        <button class="btn" id="lb-register" type="button">JOIN THE BOARD</button>
+      </div>
+
+      <div class="controls" id="lb-play" style="display:none">
+        <button class="btn big" id="lb-click" type="button">CLICK</button>
+        <div class="field"><label>Playing as</label>
+          <div class="mono" id="lb-who" style="color:var(--chalk);font-size:14px"></div>
+          <button type="button" id="lb-reset" class="note" style="background:none;border:0;padding:0;cursor:pointer;text-decoration:underline;text-align:left">not you? start over</button></div>
+      </div>
+
+      <div class="controls">
+        <div class="field"><label>Board</label>
+          <div class="seg" role="group" aria-label="Time window">
+            <button type="button" data-window="daily" aria-pressed="true">daily</button>
+            <button type="button" data-window="weekly" aria-pressed="false">weekly</button>
+            <button type="button" data-window="alltime" aria-pressed="false">all-time</button>
+          </div></div>
+        <div class="field"><label>Segment</label>
+          <div class="seg" role="group" aria-label="Segment">
+            <button type="button" data-seg="global" aria-pressed="true">global</button>
+            <button type="button" data-seg="region" aria-pressed="false" id="lb-segregion">na</button>
+          </div></div>
+      </div>
+
+      <div class="stage" id="lb-stage" style="min-height:200px">
+        <div class="note" style="margin-bottom:12px">TOP 10 BY CLICKS — <span id="lb-boardname">global · daily</span> <span id="lb-live" class="dim">· connecting…</span></div>
+        <div class="scrollx">
+          <table><thead><tr><th style="width:56px">Rank</th><th>Player</th><th style="text-align:right">Clicks</th></tr></thead>
+          <tbody id="lb-rows"><tr><td colspan="3" class="dim">waiting for the first snapshot…</td></tr></tbody></table>
+        </div>
+        <div id="lb-me" class="mono" style="margin-top:12px;font-size:12px;color:var(--c-52)"></div>
+      </div>
+
+      <div class="readout" style="margin-top:20px">
+        <div class="stat"><div class="k">Your rank</div><div class="v" id="lb-rank">—</div></div>
+        <div class="stat"><div class="k">Your clicks</div><div class="v" id="lb-pts">—</div></div>
+        <div class="stat"><div class="k">Top</div><div class="v sm" id="lb-pct">—</div></div>
+        <div class="stat"><div class="k">Write → push</div><div class="v sm" id="lb-lat">—</div></div>
+        <div class="stat"><div class="k">Pushes received</div><div class="v sm" id="lb-pushes">0</div></div>
+      </div>
+      <p class="note" id="lb-batchnote" style="margin-top:12px">&nbsp;</p>
+      <p class="note" style="margin-top:10px">One Lua script writes all six boards a click lands on — daily, weekly, all-time × global, regional — atomically · midnight resets by key name + <span class="mono">EXPIREAT</span>, no cron · ties go to whoever got there first, packed into the float64 score · Postgres event log is the truth, Redis is rebuilt from it · pushes coalesce per board every 100 ms · writes rate-limited by the Ch. 4 limiter.</p>
+      <p class="note" style="margin-top:10px;color:var(--c-18)">Clicks are counted in your tab and sent as one write every 1.5 s — the Ch. 4 limiter allows 60 writes a minute, and a click per request would trip it within seconds. Friends-only boards exist in the API but are not exposed here.</p>
+    </div>
+  </div>
+</section>
+
 <!-- ============ FOOT ============ -->
 <footer class="wrap foot reveal">
   <h2 style="font-size:clamp(30px,5vw,52px)">Still on the bench</h2>
@@ -436,7 +503,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
     <span class="soon">1.11 News Feed</span><span class="soon">1.12 Chat</span>
     <span class="soon">1.14 YouTube</span><span class="soon">1.15 Google Drive</span><span class="soon">2.1 Proximity</span>
     <span class="soon">2.2 Nearby Friends</span><span class="soon">2.3 Google Maps</span><span class="soon">2.4 Message Queue</span><span class="soon">2.5 Metrics</span><span class="soon">2.6 Ad Click Agg</span>
-    <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.8 Email</span><span class="soon">2.9 S3 Storage</span><span class="soon">2.10 Leaderboard</span>
+    <span class="soon">2.7 Hotel Reservation</span><span class="soon">2.8 Email</span><span class="soon">2.9 S3 Storage</span>
     <span class="soon">2.11 Payments</span><span class="soon">2.12 Digital Wallet</span><span class="soon">2.13 Stock Exchange</span>
   </div>
   <p style="margin-top:34px;color:var(--c-52)">Every machine here is a real repo with tests and benchmarks —
@@ -459,6 +526,7 @@ a.link:hover{text-decoration-color:var(--chalk)}
      1.7  uid-generator-go/uid           → snowNext / snowBurst / ulidNew
      1.8  url-shortener-go               → HTTP, same-origin via /api/* proxy
      1.13 autocomplete-rs (wasm-rs/)     → query / fuzzy / stats
+     2.10 leaderboard-go                 → HTTP + WebSocket, same-origin via /lb/*
 
    The one exception is the "hash % N" counterfactual in the ring panel. The
    library does not implement modulo hashing — it is the naive baseline the
@@ -490,6 +558,11 @@ function warmShortener(){
   try { fetch(SHORTENER_API+"/links/_warmup").catch(function(){}); }
   catch(e){}
 }
+
+/* ── 2.10 backend. Served same-origin by functions/lb/[[path]].js, which holds
+      the secret key and forwards REST and the WebSocket to leaderboard-go.
+      Set to null to put the panel into its "not deployed" state. ────────── */
+var LEADERBOARD_API = "/lb";
 
 /* ── Go wasm runtime, loaded lazily on first use ──────────────────────────── */
 var goRuntime = null;
@@ -544,7 +617,8 @@ var QUIPS = {
   "#hashing":      "No ring, no keys.",
   "#uid":          "Zero IDs. I'm not running.",
   "#shortener":    "Nothing to squeeze — my Postgres is missing.",
-  "#autocomplete": "No words indexed. I've got nothing to suggest."
+  "#autocomplete": "No words indexed. I've got nothing to suggest.",
+  "#leaderboard":  "Empty board. Nobody to beat — not even a bot."
 };
 function offline(sel, err){
   var panel = $(sel), stage = $(".stage", panel);
@@ -577,7 +651,7 @@ var spy = new IntersectionObserver(function(es){
     if(e.isIntersecting) railLinks.forEach(function(a){ a.classList.toggle("on", a.getAttribute("href") === "#"+e.target.id); });
   });
 },{ threshold:.2, rootMargin:"-30% 0px -50% 0px" });
-["rate-limiter","hashing","uid","shortener","autocomplete"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
+["rate-limiter","hashing","uid","shortener","autocomplete","leaderboard"].forEach(function(id){ var el=document.getElementById(id); if(el) spy.observe(el); });
 
 /* Boot a panel the first time it comes near the viewport, so a visitor who
    never scrolls past the hero never downloads the wasm binary. */
@@ -1215,6 +1289,317 @@ onFirstView("#autocomplete", function(){
       (rawBytes / st.bytes).toFixed(1) + "× smaller, because a shared prefix is stored once";
     qEl.addEventListener("input", function(){ try { run(); } catch(e){ guard("#autocomplete")(e); } });
   }).catch(guard("#autocomplete"));
+});
+
+/* ═══════════════ 2.10 LEADERBOARD ═══════════════════════════════════════════
+   Needs Redis and Postgres, so like 1.8 it is a live service, not wasm. Writes
+   go through /lb/*, where functions/lb/[[path]].js holds the secret key and
+   only lets a visitor register themselves and add clicks to their own
+   visitor-xxxxxxxx player. The board and your standing arrive over the
+   service's own WebSocket; nothing here ranks anything, it draws what the
+   server pushes.
+   ────────────────────────────────────────────────────────────────────────── */
+onFirstView("#leaderboard", function(){
+  var panel=$("#leaderboard"), stage=$("#lb-stage"), rowsEl=$("#lb-rows"), meEl=$("#lb-me"),
+      liveEl=$("#lb-live"), nameEl=$("#lb-boardname"), segRegionBtn=$("#lb-segregion");
+  var joinEl=$("#lb-join"), playEl=$("#lb-play"), nameIn=$("#lb-name"), regBtn=$("#lb-register"),
+      clickBtn=$("#lb-click"), whoEl=$("#lb-who"), batchEl=$("#lb-batchnote");
+  var rankEl=$("#lb-rank"), ptsEl=$("#lb-pts"), pctEl=$("#lb-pct"), latEl=$("#lb-lat"), pushEl=$("#lb-pushes");
+  var view={ window:"daily", seg:"global" };
+  var me=loadMe(), standing=null, pending=null, pushes=0, lastRanks={}, crowned=false;
+  var ws=null, ready=false, everOpened=false, failures=0, retryTimer=null, idleTimer=null, inView=true;
+
+  /* Must match functions/lb/[[path]].js, which is what actually enforces it. */
+  var NAME_RE=/^[\p{L}\p{N}][\p{L}\p{N} _.'-]*$/u, NAME_MAX=20;
+  /* Clicks are counted here and sent in batches. leaderboard-go's write limit
+     is 60 a minute per IP (burst 20); one request per click would 429 inside
+     ten seconds of honest clicking. Every FLUSH_MS the unsent count goes out
+     as a single delta, so the board still adds exactly one point per click. */
+  var FLUSH_MS=1500, MAX_BATCH=30;
+  var unsent=0, inflight=0, throttledUntil=0;
+
+  function esc(t){ return String(t).replace(/[<>&"]/g, function(c){
+    return c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&amp;"; }); }
+  function commas(n){ return Number(n).toLocaleString("en-US"); }
+
+  /* Who you are survives a reload, so a returning visitor keeps their clicks.
+     Storage can be missing (private mode); then you register each visit. */
+  function newId(){
+    var b=new Uint8Array(4); crypto.getRandomValues(b);
+    return "visitor-"+[].map.call(b,function(x){ return ("0"+x.toString(16)).slice(-2); }).join("");
+  }
+  function loadMe(){
+    try {
+      var m=JSON.parse(localStorage.getItem("lb-me")||"null");
+      if(m && /^visitor-[0-9a-f]{8}$/.test(m.id) && (!m.joined || m.name)) return m;
+    } catch(e){}
+    return { id:newId(), name:"", region:"na", joined:false };
+  }
+  function saveMe(){ try { localStorage.setItem("lb-me", JSON.stringify(me)); } catch(e){} }
+
+  function region(){ return view.seg==="region" ? me.region : ""; }
+  function boardId(){ return (region() ? "region:"+region() : "global")+":"+view.window; }
+  function msg(type, extra){
+    var o={ type:type, window:view.window };
+    if(region()) o.region=region();
+    for(var k in extra) o[k]=extra[k];
+    return o;
+  }
+  function send(o){ if(ws && ws.readyState===1) ws.send(JSON.stringify(o)); }
+  function subscriptions(type){
+    send(msg(type, { limit:10 }));
+    if(me.joined) send(msg(type, { player_id:me.id }));
+  }
+
+  /* ── drawing ── */
+  function renderBoard(page){
+    var entries=page.entries||[], mine=false;
+    liveEl.innerHTML='· <span class="ok">live</span> · '+commas(page.total)+(page.total===1?' player · ':' players · ')+esc(page.period);
+    if(!entries.length){ rowsEl.innerHTML='<tr><td colspan="3" class="dim">Nobody has clicked on this board yet. Be first.</td></tr>'; }
+    else rowsEl.innerHTML=entries.map(function(e){
+      var you=e.player_id===me.id, prev=lastRanks[e.player_id], name=esc(e.name||e.player_id);
+      if(you) mine=true;
+      var moved=prev && prev>e.rank ? ' <span class="chip">▲'+(prev-e.rank)+'</span>' : '';
+      return '<tr'+(you?' style="background:var(--c-09)"':'')+'><td>'+(you?'<b>':'')+'#'+e.rank+(you?'</b>':'')+'</td>'+
+        '<td>'+(you?'<b>'+name+'</b> <span class="dim" style="white-space:nowrap">← you</span>':name)+moved+'</td>'+
+        '<td style="text-align:right">'+(you?'<b>':'')+commas(e.score)+(you?'</b>':'')+'</td></tr>';
+    }).join("");
+    lastRanks={};
+    entries.forEach(function(e){ lastRanks[e.player_id]=e.rank; });
+    meEl.dataset.inTop=mine?"1":"";
+    drawMe();
+  }
+  function renderStanding(st){
+    standing=st;
+    if(st.ranked && pending && st.score!==pending.before){
+      latEl.textContent=Math.round(performance.now()-pending.t0)+" ms";
+      pending=null;
+    }
+    drawMe();
+    if(st.ranked && st.rank===1 && !crowned){
+      crowned=true;
+      bubble(stage,"Number one. Now hold it.",{left:20,top:34,hold:2200});
+    }
+  }
+  /* Your clicks = what the board has confirmed + what this tab still holds.
+     The unconfirmed part is shown separately so the number never pretends the
+     server has counted something it has not. */
+  function drawMe(){
+    var ranked=standing && standing.ranked, local=unsent+inflight;
+    rankEl.textContent=ranked ? "#"+commas(standing.rank) : "—";
+    pctEl.textContent=ranked ? Number(standing.top_percent.toFixed(2))+"%" : "—";
+    ptsEl.innerHTML=me.joined ? commas(ranked ? standing.score : 0)+
+      (local ? ' <span style="font-size:13px;color:var(--c-52)">+'+commas(local)+'</span>' : '') : "—";
+    batchEl.innerHTML=local ? "+"+commas(local)+" counted in this tab, not yet on the board — "+
+      (Date.now()<throttledUntil ? '<span class="no">held back by the rate limiter</span>' : "sent every "+(FLUSH_MS/1000)+" s")
+      : "&nbsp;";
+    if(!me.joined){ meEl.innerHTML='<span class="dim">Pick a name and join to get on the board.</span>'; return; }
+    if(!ranked){ meEl.innerHTML='<span class="dim">'+esc(me.name)+' — no clicks on this board yet.</span>'; return; }
+    meEl.innerHTML=meEl.dataset.inTop ? '' :
+      'you · <b style="color:var(--chalk)">#'+commas(standing.rank)+'</b> of '+commas(standing.total)+
+      ' · '+commas(standing.score)+' clicks <span class="dim">· one ZREVRANK, not a scan</span>';
+  }
+  function showMode(){
+    joinEl.style.display=me.joined ? "none" : "";
+    playEl.style.display=me.joined ? "" : "none";
+    whoEl.textContent=me.joined ? me.name+" · "+me.region : "";
+    press("[data-region]","data-region",me.region);
+    segRegionBtn.textContent=me.region;
+    drawMe();
+  }
+
+  /* ── the socket ──
+     The server sends a snapshot on subscribe, then only when the data changed.
+     Messages for a board you just switched away from can still be in flight,
+     so anything whose topic is not the current board is dropped. */
+  function onMessage(ev){
+    var m; try { m=JSON.parse(ev.data); } catch(e){ return; }
+    if(m.type==="error"){ console.warn("#leaderboard", m.error); return; }
+    if(m.topic==="board:"+boardId()) renderBoard(m.data);
+    else if(m.topic==="player:"+me.id+"@"+boardId()) renderStanding(m.data);
+    else return;
+    pushEl.textContent=commas(++pushes);
+  }
+  function connect(){
+    clearTimeout(retryTimer);
+    if(ws || !ready || !inView) return;
+    var sock=new WebSocket((location.protocol==="https:"?"wss:":"ws:")+"//"+location.host+LEADERBOARD_API+"/ws");
+    ws=sock;
+    sock.onopen=function(){ everOpened=true; failures=0; subscriptions("subscribe"); };
+    sock.onmessage=onMessage;
+    sock.onclose=function(){
+      if(ws!==sock) return;
+      ws=null;
+      if(!inView){ liveEl.innerHTML='· <span class="dim">paused while you\'re away</span>'; return; }
+      failures++;
+      if(!everOpened && failures===3){
+        offline("#leaderboard", new Error("The REST proxy answered but the WebSocket at "+LEADERBOARD_API+"/ws would not open.\n"+
+          "Check that leaderboard-go is up and functions/lb/[[path]].js is deployed."));
+      }
+      // Cloud Run ends long requests, sockets included. Reconnecting gets a
+      // fresh snapshot, so the board just carries on.
+      liveEl.innerHTML='· <span class="dim">reconnecting…</span>';
+      retryTimer=setTimeout(connect, Math.min(15000, 500*Math.pow(2, failures)));
+    };
+  }
+  function disconnect(){ clearTimeout(retryTimer); if(ws){ var s=ws; ws=null; s.close(); } }
+
+  /* An idle service scales to zero. Holding a socket open from a background
+     tab, or from a visitor who scrolled on to something else, would keep the
+     container up for nobody. */
+  function setInView(v){
+    clearTimeout(idleTimer);
+    if(v){ inView=true; connect(); return; }
+    idleTimer=setTimeout(function(){
+      inView=false; disconnect();
+      liveEl.innerHTML='· <span class="dim">paused while you\'re away</span>';
+    }, 20000);
+  }
+  if("IntersectionObserver" in window){
+    new IntersectionObserver(function(es){ setInView(es[0].isIntersecting && !document.hidden); }).observe(panel);
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(document.hidden){ flush(true); setInView(false); }
+    else { var r=panel.getBoundingClientRect(); setInView(r.bottom>0 && r.top<innerHeight); }
+  });
+
+  /* ── board controls ── */
+  function press(sel, attr, val){
+    panel.querySelectorAll(sel).forEach(function(b){ b.setAttribute("aria-pressed", b.getAttribute(attr)===val ? "true" : "false"); });
+  }
+  function changeView(fn){
+    subscriptions("unsubscribe");
+    fn();
+    lastRanks={}; standing=null; meEl.dataset.inTop="";
+    nameEl.textContent=(view.seg==="region" ? me.region : "global")+" · "+(view.window==="alltime" ? "all-time" : view.window);
+    rowsEl.innerHTML='<tr><td colspan="3" class="dim">loading…</td></tr>';
+    drawMe();
+    subscriptions("subscribe");
+  }
+  panel.querySelectorAll("[data-window]").forEach(function(b){
+    b.addEventListener("click", function(){ changeView(function(){ view.window=b.dataset.window; press("[data-window]","data-window",view.window); }); });
+  });
+  panel.querySelectorAll("[data-seg]").forEach(function(b){
+    b.addEventListener("click", function(){ changeView(function(){ view.seg=b.dataset.seg; press("[data-seg]","data-seg",view.seg); }); });
+  });
+  panel.querySelectorAll("[data-region]").forEach(function(b){
+    b.addEventListener("click", function(){
+      if(me.joined) return; // the service stamps your region on every write
+      var r=b.dataset.region;
+      if(view.seg==="region") changeView(function(){ me.region=r; });
+      else me.region=r;
+      showMode();
+    });
+  });
+
+  function post(path, body){
+    return fetch(LEADERBOARD_API+path, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        return { status:r.status, ok:r.ok, body:j, retry:parseInt(r.headers.get("retry-after"),10)||0 };
+      });
+    });
+  }
+  function complain(r){
+    if(r && r.status) bubble(stage,(r.body && r.body.error) || ("HTTP "+r.status),{alarm:true,left:16,top:10,hold:2400});
+    else guard("#leaderboard")(r);
+  }
+
+  /* ── registering ── */
+  function normName(s){ return s.replace(/\s+/g," ").trim(); }
+  function register(){
+    var name=normName(nameIn.value);
+    if(!name || Array.from(name).length>NAME_MAX || !NAME_RE.test(name)){
+      bubble(stage,"1–"+NAME_MAX+" letters, digits, spaces or _ . ' -",{alarm:true,left:16,top:10,hold:2000});
+      nameIn.focus(); return;
+    }
+    regBtn.disabled=true;
+    (function attempt(retried){
+      return post("/players", { id:me.id, name:name, region:me.region }).then(function(r){
+        // 409 means this random id is already taken. Draw another, once.
+        if(r.status===409 && !retried){ me.id=newId(); return attempt(true); }
+        if(!r.ok) throw r;
+        me.name=r.body.name || name; me.joined=true; saveMe();
+        send(msg("subscribe", { player_id:me.id }));
+        showMode(); clickBtn.focus();
+        bubble(stage,"You're on the board, "+me.name+". Start clicking.",{left:20,top:34,hold:2000});
+      });
+    })(false).catch(complain).then(function(){ regBtn.disabled=false; });
+  }
+  regBtn.addEventListener("click", register);
+  nameIn.addEventListener("keydown", function(e){ if(e.key==="Enter") register(); });
+
+  /* Starting over forgets this browser's player. The old one stays on the
+     board — the service has no delete, and its clicks were real. */
+  $("#lb-reset").addEventListener("click", function(){
+    flush(true);
+    if(me.joined) send(msg("unsubscribe", { player_id:me.id }));
+    me={ id:newId(), name:"", region:me.region, joined:false };
+    saveMe(); standing=null; crowned=false; unsent=0; latEl.textContent="—";
+    nameIn.value=""; showMode(); nameIn.focus();
+  });
+
+  /* ── clicking ── */
+  clickBtn.addEventListener("click", function(){
+    unsent++;
+    drawMe();
+  });
+  function flush(leaving){
+    if(!me.joined || !unsent) return;
+    if(leaving){
+      // The tab is going away: hand the remainder to the browser to deliver.
+      // Same proxy, same checks; it parses the body whatever the content type.
+      while(unsent>0){
+        var b=Math.min(unsent, MAX_BATCH); unsent-=b;
+        try { navigator.sendBeacon(LEADERBOARD_API+"/scores", JSON.stringify({ player_id:me.id, delta:b })); } catch(e){}
+      }
+      return;
+    }
+    if(inflight || Date.now()<throttledUntil) return;
+    var n=Math.min(unsent, MAX_BATCH);
+    unsent-=n; inflight=n;
+    pending={ t0:performance.now(), before:standing && standing.ranked ? standing.score : null };
+    post("/scores", { player_id:me.id, delta:n }).then(function(r){
+      if(r.status===429){
+        // Keep the clicks; back off until the limiter's bucket refills.
+        throttledUntil=Date.now()+Math.max(1, r.retry)*1000;
+        throw { kept:true };
+      }
+      if(!r.ok) throw r;
+      if(r.status===202){
+        bubble(stage,"Stored in Postgres, not on the board yet — Redis is down and the relay will apply it.",{alarm:true,left:16,top:10,hold:2600});
+      }
+    }).catch(function(e){
+      pending=null;
+      if(e && e.kept){ unsent+=n; return; }
+      // A 4xx is the proxy or the service refusing this write; sending it
+      // again would be refused again, so the batch is dropped and said so.
+      if(e && e.status>=400 && e.status<500){ complain(e); return; }
+      // Network or 5xx: keep the clicks and try again in a few seconds.
+      unsent+=n; throttledUntil=Date.now()+5000; complain(e);
+    }).then(function(){ inflight=0; drawMe(); });
+    drawMe();
+  }
+  setInterval(function(){ flush(false); if(unsent && Date.now()>=throttledUntil) drawMe(); }, FLUSH_MS);
+  window.addEventListener("pagehide", function(){ flush(true); });
+
+  showMode();
+
+  /* One REST read before the socket: it wakes a scaled-to-zero service, and it
+     tells a missing deployment ("503, not configured") apart from a socket that
+     merely dropped — the WebSocket API reports every failure as a bare close. */
+  if(!LEADERBOARD_API){ offline("#leaderboard", new Error("leaderboard-go is not deployed. Set LEADERBOARD_API and add functions/lb/[[path]].js")); return; }
+  fetch(LEADERBOARD_API+"/leaderboards/daily?limit=1").then(function(r){
+    if(r.ok) return;
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      throw new Error(j.error || ("GET "+LEADERBOARD_API+"/leaderboards/daily → HTTP "+r.status+
+        "\n\n/lb/* is served by frontend/functions/lb/[[path]].js on Cloudflare Pages;\na plain static server does not run it."));
+    });
+  }).then(function(){ ready=true; connect(); }).catch(function(e){
+    regBtn.disabled=true; clickBtn.disabled=true; liveEl.textContent="";
+    guard("#leaderboard")(e);
+  });
 });
 
 })();
