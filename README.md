@@ -4,25 +4,20 @@
 
 ### ▶ [Try it live — the Machine Room](https://system-design-from-scratch.pages.dev/)
 
-Six chapters, playable in the browser. Overload a rate limiter, break a hash
-ring, spam an ID generator, misspell at an autocomplete — and shorten a URL and
-climb a leaderboard against live Go services.
+Five chapters, playable in the browser. Overload a rate limiter, break a hash
+ring, spam an ID generator, misspell at an autocomplete — and shorten a URL
+against a live Go service.
 
 | Panel | Runs |
 |---|---|
 | [1.4 Rate Limiter](https://system-design-from-scratch.pages.dev/#rate-limiter) · [1.5 Consistent Hashing](https://system-design-from-scratch.pages.dev/#hashing) · [1.7 Unique ID](https://system-design-from-scratch.pages.dev/#uid) | Go → WebAssembly, in your browser |
 | [1.13 Search Autocomplete](https://system-design-from-scratch.pages.dev/#autocomplete) | Rust → WebAssembly, 50k-word corpus |
 | [1.8 URL Shortener](https://system-design-from-scratch.pages.dev/#shortener) | Live service — Cloud Run + 2 Postgres shards + Redis |
-| [2.10 Leaderboard](https://system-design-from-scratch.pages.dev/#leaderboard) | Live service — Redis sorted sets + Postgres, WebSocket push |
 
 The 1.8 panel talks to a real deployment: consistent-hash routing across two
 Neon shards, cache-aside through Upstash, and the chapter's own token-bucket
 limiter on `/api`. It scales to zero, so the first request after an idle spell
 wakes the container and the database — the panel warms it on scroll.
-
-The 2.10 panel is a click race against other visitors: register under a name,
-and each click is a point on daily, weekly and all-time boards, with rank
-changes pushed over the service's WebSocket.
 
 Each chapter lives in its own directory here as a **git submodule** pointing to a standalone implementation repo. Every chapter ships with tests, benchmarks, and notes on its design decisions.
 
@@ -153,7 +148,7 @@ Benchmarks at 1M players: rank read p99 2.0ms from Redis and 5.2ms through the H
 
 `frontend/` is a single-page showroom where four of these chapters run **live in the browser**: the real libraries compiled to WebAssembly, not reimplementations. You can overload the rate limiter, kill a node on the hash ring, spam the ID generator, and type at an autocomplete backed by 50,000 English words with their Google web-corpus frequencies.
 
-Ch. 8 and Vol. 2 Ch. 10 are the exceptions: they need Postgres and Redis, so they cannot run as WebAssembly. Their panels talk to the deployed services through same-origin proxies (`frontend/functions/api/` and `frontend/functions/lb/`). Ch. 13's write path — RocksDB batching, restart recovery, multi-tenancy — is out of the browser for the same reason; the panel demonstrates the query path only.
+Ch. 8 is the exception: it needs Postgres and Redis, so it cannot run as WebAssembly. Its panel talks to the deployed service through a same-origin proxy (`frontend/functions/api/`). Ch. 13's write path — RocksDB batching, restart recovery, multi-tenancy — is out of the browser for the same reason; the panel demonstrates the query path only.
 
 ```bash
 cd frontend

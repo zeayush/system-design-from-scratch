@@ -15,7 +15,6 @@ and never modified.
   1.8  LIVE    url-shortener-go on Cloud Run, via the /api/* proxy
   1.13 LIVE    RadixTrie::prefix_search / fuzzy_search answer every keystroke,
                over 50,000 real English words with real web-corpus counts
-  2.10 LIVE    leaderboard-go on Cloud Run, REST + WebSocket via the /lb/* proxy
 
 TWO WASM BINARIES, NOT ONE
 
@@ -61,7 +60,7 @@ HOW IT FITS TOGETHER
   data/            build-corpus.sh -- provenance and filtering for the corpus.
   index.html       UI and panel wiring. Loads the wasm lazily, per panel,
                    on first scroll into view.
-  functions/       Cloudflare Pages Functions: /api/* to 1.8, /lb/* to 2.10.
+  functions/       Cloudflare Pages Function proxying /api/* to 1.8.
   build.sh         builds both wasm artifacts + copies wasm_exec.js.
 
 
@@ -195,36 +194,6 @@ Not shown for 1.13 either: the RocksDB write-behind, restart recovery and the
 multi-tenant Engine need a server and a persistent disk.
 
 
-2.10 LEADERBOARD
-----------------
-
-A click race on leaderboard-go: register under a name, and each click is one
-point on the daily, weekly and all-time boards, global or per region. Runs on
-Cloud Run with SIM_BOTS=0, since bot points are not clicks. The board and your
-standing arrive over the service's own WebSocket at /lb/ws.
-
-functions/lb/[[path]].js proxies /lb/* to LEADERBOARD_ORIGIN and holds
-LEADERBOARD_KEY, a secret key the page never sees. It allows only:
-registering a visitor-xxxxxxxx player with a 1-20 character name of letters,
-digits, spaces and _ . ' -, adding 1-30 clicks per write to such a player, and
-the reads. Every other route is refused.
-
-Clicks are batched: the tab counts them and sends one write every 1.5 s,
-because the service allows 60 writes a minute per IP. A 429 keeps the clicks
-and backs off; unsent clicks go out with sendBeacon when the tab closes. The
-limits are per write, not per person, so a script can outpace a human. It is
-a demo, not a contest.
-
-Shares 1.8's Neon instance (its own `leaderboard` database, on the direct
-endpoint, because migrations take a session advisory lock the pooler cannot
-hold) and 1.8's Upstash database. The keys do not collide: lb:* and rl:lb:<ip>
-here, url:* and rl:<ip> for 1.8.
-
-The socket closes 20 s after the panel leaves view or the tab is hidden, so the
-service can scale to zero. Cloud Run ends WebSockets at its 900 s request
-timeout; the panel reconnects and gets a fresh snapshot.
-
-
 DESIGN
 ------
 
@@ -247,7 +216,6 @@ wasm/               Go module: marshalling shim over the chapter libraries
 wasm-rs/            Rust crate: marshalling shim over 1.13's radix trie
                     src/lib.rs also carries the smoke tests -- see TESTING
 data/               build-corpus.sh: how static/corpus.tsv was cut
-functions/          Cloudflare Pages Functions: same-origin proxies for 1.8
-                    (api/) and 2.10 (lb/)
+functions/          Cloudflare Pages Function: same-origin proxy for 1.8
 build.sh            builds both wasm artifacts
 readme.txt          this file
